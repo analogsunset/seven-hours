@@ -71,6 +71,11 @@ __pycache__/
 *.pyc
 .claude/
 .DS_Store
+
+# deploy_pages.py stages the built site here before pushing it to gh-pages.
+# It lives inside the repo so the worktree can reach it, and it is 91 MB.
+.pages-build/
+.pages-wt/
 """
 
 
@@ -105,7 +110,9 @@ def main():
     if os.path.isdir(DEST):
         keep = {f.replace('/', os.sep) for f in FILES} | {'.gitignore', 'README.md'}
         for root, dirs, names in os.walk(DEST):
-            dirs[:] = [d for d in dirs if d not in ('.git', 'web', '__pycache__')]
+            dirs[:] = [d for d in dirs
+                       if d not in ('.git', 'web', '__pycache__',
+                                    '.pages-build', '.pages-wt')]
             for n in names:
                 rel = os.path.relpath(os.path.join(root, n), DEST)
                 if rel not in keep and not rel.startswith('.git'):

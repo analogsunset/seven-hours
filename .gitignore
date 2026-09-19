@@ -23,3 +23,8 @@ __pycache__/
 *.pyc
 .claude/
 .DS_Store
+
+# deploy_pages.py stages the built site here before pushing it to gh-pages.
+# It lives inside the repo so the worktree can reach it, and it is 91 MB.
+.pages-build/
+.pages-wt/

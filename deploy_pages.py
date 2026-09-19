@@ -64,7 +64,11 @@ def main():
     if os.path.isdir(wt):
         shutil.rmtree(wt, ignore_errors=True)
     run(['git', 'worktree', 'add', '--detach', '.pages-wt'], REPO)
-    run(['git', 'checkout', '--orphan', 'gh-pages'], wt)
+    # A throwaway branch name, pushed to gh-pages by refspec. Using the real
+    # name here fails the moment a local gh-pages exists -- which it does as
+    # soon as anyone fetches the remote one.
+    run(['git', 'branch', '-D', 'pages-staging'], REPO, check=False)
+    run(['git', 'checkout', '--orphan', 'pages-staging'], wt)
     run(['git', 'rm', '-rf', '--quiet', '.'], wt, check=False)
     for name in os.listdir(STAGE):
         s = os.path.join(STAGE, name)
@@ -72,8 +76,9 @@ def main():
         (shutil.copytree if os.path.isdir(s) else shutil.copy2)(s, d)
     run(['git', 'add', '-A'], wt)
     run(['git', 'commit', '-m', 'Deploy Seven Hours'], wt)
-    run(['git', 'push', '-f', 'origin', 'gh-pages'], wt)
+    run(['git', 'push', '-f', 'origin', 'HEAD:gh-pages'], wt)
     run(['git', 'worktree', 'remove', '--force', '.pages-wt'], REPO, check=False)
+    run(['git', 'branch', '-D', 'pages-staging'], REPO, check=False)
     print('\npushed to gh-pages. Enable Pages on that branch if you have not already.')
 
 

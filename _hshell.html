@@ -1,0 +1,684 @@
+<meta charset="utf-8">
+<!-- Declared explicitly. Published as an artifact the platform wraps this
+     in a head that carries a charset, but the file on disk gets no such
+     help: with nothing declared a browser falls back to Windows-1252 and
+     every multi-byte character breaks apart -- an en dash renders as the
+     three characters its UTF-8 bytes spell out. -->
+<title>Seven Hours</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#EEF2F5; --surface:#FFFFFF; --sunk:#E3E9EE;
+  --ink:#0E151B; --ink-2:#3D4B58; --muted:#5C6B79; --rule:#CBD5DD;
+  --empty:#DAE2E8; --good:#008800; --good-ink:#008800; --great:#0F62FE; --epic:#CB0ECB; --epic-ink:#9A0B9A;
+  --wind:#9B3B2E; --snow:#8FA6B5;
+  --focus:#0F6E9E;
+  /* Terrain difficulty is ORDINAL, so it takes a sequential ramp -- one hue,
+     rising contrast for easy -> advanced -- not the green/blue/black of trail
+     signs. Those two hues are already spoken for here: green is a good day and
+     blue is a great one, and a green segment beside a green stat on the same
+     card would be read as the same thing. Neutral also keeps terrain
+     recessive, which is right; it is supporting detail, not the headline.
+     Validated: adjacent CVD delta-E 19.5 (protan), lightness monotonic. The
+     lightest step sits under 3:1 on this surface, so every segment carries a
+     visible label -- the bar never encodes by colour alone. */
+  --t-easy:#C4D0DA; --t-mid:#7E93A3; --t-hard:#3D4B58;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C1116; --surface:#151D25; --sunk:#101820;
+    --ink:#E4EBF1; --ink-2:#B4C2CE; --muted:#8497A6; --rule:#26333E;
+    /* One value per hue, the same in both themes. Every tier now clears 3:1 on
+       this surface too -- Great 3.40, Epic 3.62, Good 3.66 -- so nothing reads
+       dim here any more. Only the text-only steps below differ by theme, and
+       they must: a link needs 4.5:1, which no single value gives on both a
+       white and a near-black ground. */
+    --empty:#1D2731; --good:#008800; --good-ink:#3FB55C; --great:#0F62FE; --epic:#CB0ECB; --epic-ink:#D08FD0;
+    --wind:#C4614E; --snow:#5E7789;
+    --focus:#3389BC;
+    /* Chosen for this surface, not flipped: contrast still RISES easy ->
+       advanced (1.81 / 4.32 / 9.36), so the ramp reads the same way in both
+       themes. CVD delta-E 20.4, lightness monotonic. */
+    --t-easy:#3A4854; --t-mid:#6E8393; --t-hard:#B4C2CE;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C1116; --surface:#151D25; --sunk:#101820;
+  --ink:#E4EBF1; --ink-2:#B4C2CE; --muted:#8497A6; --rule:#26333E;
+  /* One value per hue, the same in both themes. Every tier now clears 3:1 on
+       this surface too -- Great 3.40, Epic 3.62, Good 3.66 -- so nothing reads
+       dim here any more. Only the text-only steps below differ by theme, and
+       they must: a link needs 4.5:1, which no single value gives on both a
+       white and a near-black ground. */
+    --empty:#1D2731; --good:#008800; --good-ink:#3FB55C; --great:#0F62FE; --epic:#CB0ECB; --epic-ink:#D08FD0;
+    --wind:#C4614E; --snow:#5E7789;
+  --focus:#3389BC;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:"Source Sans 3",ui-sans-serif,system-ui,sans-serif;font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 24px 72px}
+.eyebrow{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0}
+h1{font-family:Archivo,ui-sans-serif,sans-serif;font-weight:800;letter-spacing:-.03em;
+  font-size:clamp(38px,6.4vw,66px);line-height:.97;margin:10px 0 0;text-wrap:balance}
+.dek{max-width:64ch;color:var(--ink-2);font-size:17px;margin:16px 0 0}
+h2{font-family:Archivo,sans-serif;font-weight:700;letter-spacing:-.015em;font-size:23px;margin:0}
+h2 .n{font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted);
+  letter-spacing:.1em;margin-left:10px;text-transform:uppercase;font-weight:500}
+.rule{height:1px;background:var(--rule);border:0;margin:38px 0}
+.lead{max-width:74ch;color:var(--ink-2);margin:10px 0 0}
+.notes{margin-top:12px;color:var(--muted);font-size:13.5px;max-width:76ch}
+.notes p{margin:.65em 0}
+.notes b{color:var(--ink-2)}
+
+/* ---- hour panel: the hero ---- */
+.hcol{display:flex;flex-direction:column;gap:2px}
+.htemp{font-family:"IBM Plex Mono",monospace;font-size:10px;text-align:center;
+  color:var(--ink-2);font-variant-numeric:tabular-nums}
+.hclock{font-family:"IBM Plex Mono",monospace;font-size:9px;text-align:center;color:var(--muted)}
+
+/* ---- trip grid ---- */
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:26px 0 12px}
+input[type="date"],select,input[type="search"]{font-family:"IBM Plex Mono",monospace;font-size:12px;
+  background:var(--surface);color:var(--ink);border:1px solid var(--rule);border-radius:2px;
+  padding:6px 8px;color-scheme:light dark}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+button.sort{font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.05em;
+  text-transform:uppercase;background:var(--surface);color:var(--ink-2);
+  border:1px solid var(--rule);border-radius:2px;padding:7px 11px;cursor:pointer}
+button.sort[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.warn{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--wind);margin-left:6px}
+.fcount{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;margin-left:2px}
+/* Regions are a multi-select, the sort is one-of-many, so they are not the
+   same control and do not take the same shape: pill for "add another",
+   square for "switch to". */
+.chips{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:24px 0 0}
+button.chip{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.04em;
+  background:var(--surface);color:var(--ink-2);border:1px solid var(--rule);
+  border-radius:999px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+button.chip:hover{border-color:var(--ink-2)}
+button.chip[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+button.chip .n{opacity:.55;margin-left:6px;font-variant-numeric:tabular-nums}
+/* terrain split: one thin bar, 2px surface gaps between segments.
+   Named tsplit, not terr -- .terr is already the card's footer stat row. */
+.tsplit{grid-column:1/-1;margin-top:9px}
+.terrbar{display:flex;gap:2px;height:7px;margin-bottom:5px}
+.terrbar i{display:block;border-radius:2px;min-width:2px}
+.terrbar i.e{background:var(--t-easy)} .terrbar i.m{background:var(--t-mid)}
+.terrbar i.h{background:var(--t-hard)}
+.terrkey{display:flex;gap:6px 16px;flex-wrap:wrap;font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+/* each entry is a two-line stack: share on top, the acreage it represents
+   directly beneath it, so the eye pairs them vertically instead of hunting
+   along a run of alternating numbers */
+.terrkey > span{display:flex;flex-direction:column;gap:1px}
+.terrkey .lab{display:flex;align-items:center;gap:5px}
+.terrkey i{width:8px;height:8px;border-radius:2px;display:block;flex:none}
+.terrkey b{color:var(--ink-2);font-weight:600}
+/* indented past the swatch so it lines up under the label, not the chip */
+.terrkey .ac{color:var(--muted);opacity:.8;padding-left:13px}
+.empty{font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink-2);
+  border:1px dashed var(--rule);border-radius:3px;padding:22px;text-align:center}
+/* min(380px,100%) rather than a bare 380px: on a viewport narrower than one
+   card the track cannot shrink below its minimum, so the cards push past the
+   body and the whole page scrolls sideways. */
+/* auto-FILL, not auto-fit. auto-fit collapses the tracks nothing landed in,
+   so the moment a filter narrowed the list to a single mountain that one card
+   stretched across all 1192px -- a card five times wider than every other one
+   on the page, with its winter grid stretched to match. auto-fill keeps the
+   three tracks standing and leaves the empty ones empty, so a card is the same
+   size whether the filter returns one result or a hundred. */
+.grids{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(380px,100%),1fr));gap:14px}
+/* align-content:start is load-bearing. Cards in a row all stretch to the
+   tallest, and a grid's default align-content of "stretch" then hands that
+   spare height to the auto-sized rows -- so a card missing an optional block
+   (Echo Valley has no terrain split) spreads the slack across FEWER rows, each
+   grows more, and its winter grid starts 56px lower than its neighbours'.
+   Pinning the rows to their natural height collects the slack at the bottom of
+   the card instead, where nothing has to line up. */
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:4px;padding:13px 15px 15px;
+  display:grid;grid-template-columns:1fr auto;gap:12px 16px;align-items:start;align-content:start}
+/* Two lines are always reserved, whether the name needs them or not. Resort
+   names run from "Alta" to "The Summit at Snoqualmie", and letting the title
+   set its own height started the winter grid at 116px on some cards and 122px
+   on others -- so the same February sat on a different line of the page from
+   one card to the next, which is exactly the comparison these cards exist to
+   make. */
+.card h3{font-family:Archivo,sans-serif;font-weight:700;font-size:16px;margin:0;
+  letter-spacing:-.01em;line-height:1.55;min-height:3.1em}
+.rank{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;color:var(--muted);
+  font-variant-numeric:tabular-nums;margin-right:7px}
+/* One line, never two. Region, state, currency and both prices are a single
+   run of identity; broken across lines it read as three unrelated fragments.
+   The longest of the 154 is 433px and the median 368px, which is why the card
+   minimum below is 500px rather than 380px -- at 388px cards only 44 of 154
+   fitted. Narrower than that (a phone) the row scrolls inside itself: it still
+   never wraps, nothing is clipped, and the PAGE never scrolls sideways. */
+.card .place{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted);
+  letter-spacing:.07em;text-transform:uppercase;margin-top:-6px;
+  grid-column:1/-1;
+  display:flex;flex-wrap:nowrap;align-items:center;gap:0 7px;
+  white-space:nowrap;overflow-x:auto;scrollbar-width:none}
+.card .place::-webkit-scrollbar{display:none}
+/* only when it really did not fit: fade the last 22px so the row reads as
+   scrollable rather than as text someone chopped off */
+.card .place.is-cut{
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent 100%);
+  mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent 100%)}
+/* Same type as the line above it. Moved out of .place the badge stopped
+   inheriting that row's 10.5px mono and jumped to the card's body font, which
+   made it enormous next to everything around it. */
+.card .prov-row{grid-column:1/-1;margin-top:-3px;display:flex;align-items:center;
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--muted)}
+.card .prov-row .prov{margin-left:0}
+/* absence is stated, not implied by a missing badge */
+.noprov{display:inline-block;padding:0 4px;border-radius:2px;
+  background:color-mix(in srgb,var(--muted) 10%,transparent);color:var(--muted);
+  font-size:10px;letter-spacing:.04em;cursor:help;white-space:nowrap}
+/* each piece of the header is its own flex item and never breaks internally,
+   so a narrow card wraps between them rather than mid-price or mid-badge */
+.card .place > span{white-space:nowrap}
+/* State, currency and both prices ride together and stay on one line wherever
+   the card is wide enough; the gauge badge is what moves down first.
+
+   flex-wrap is the release valve, and it is not optional. The header shares a
+   grid row with the stats block, which takes ~179px, so on a 380px card the
+   header track has only ~155px. Held at nowrap the group's min-content is
+   ~274px, a grid track cannot shrink below min-content, and the card's columns
+   summed to 454px inside a 380px card -- overflowing every full-width row
+   under it and giving the whole PAGE a horizontal scrollbar. It wraps only
+   when one line genuinely will not fit. */
+/* the price row wears the same type as the two rows around it */
+.card .price-row{grid-column:1/-1;margin-top:-7px;
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:var(--muted);
+  letter-spacing:.07em;text-transform:uppercase;
+  display:flex;flex-wrap:nowrap;align-items:center;gap:0 7px;white-space:nowrap}
+.card .price-row .sep,.card .place .sep{opacity:.6}
+.noprice{opacity:.7;font-style:normal}
+/* region leads the line and carries its own separator, so it can break away
+   from the state-and-prices group without leaving a dangling middot */
+.card .place .reg::after{content:"\B7 ";margin-left:7px;opacity:.6}
+/* let the header track shrink; without this its min-content sets the column */
+.card > div:first-child{min-width:0}
+/* a resort whose snow was checked against a real gauge on the hill */
+.prov{display:inline-block;margin-left:7px;padding:0 4px;border-radius:2px;
+  background:color-mix(in srgb,var(--epic) 12%,transparent);color:var(--epic-ink);
+  font-size:10px;letter-spacing:.04em;cursor:help;white-space:nowrap}
+.terr .meas{color:var(--muted);font-weight:400}
+/* base carries the rest of the elevation band on hover, so it says so */
+.terr .elev{cursor:help}
+.terr .elev b{border-bottom:1px dotted var(--rule)}
+.vtab{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:12px;
+  margin:14px 0}
+.vtab th{text-align:left;font-weight:600;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.06em;font-size:10px;padding:0 8px 6px 0;border-bottom:1px solid var(--empty)}
+.vtab td{padding:5px 8px 5px 0;border-bottom:1px solid color-mix(in srgb,var(--empty) 45%,transparent)}
+.vtab .r{text-align:right}
+.vtab.tight{max-width:420px}
+.fine{font-size:11.5px;color:var(--muted);line-height:1.55;margin:6px 0 0}
+.defs{margin:14px 0 0;display:grid;gap:7px;font-size:12.5px;color:var(--ink-2);
+  line-height:1.5;max-width:820px}
+.defs .dt{display:inline-block;min-width:52px;margin-right:9px;padding:1px 7px;border-radius:3px;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;text-align:center;
+  letter-spacing:.04em;color:#FFFFFF}
+.defs .dt.great{background:var(--great)}
+.defs .dt.epic{background:var(--epic)}
+.stat.epic .sv{color:var(--epic)}
+.defs .dt.good{background:var(--good)}
+.defs .dt.meh{background:var(--empty);color:var(--muted)}
+.scales{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px;
+  margin:18px 0 0;max-width:860px}
+.scales h4{margin:0 0 7px;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.scales ul{margin:0;padding:0;list-style:none;font-family:"IBM Plex Mono",monospace;font-size:12px}
+.scales li{display:grid;grid-template-columns:max-content 1fr;column-gap:12px;
+  padding:3px 0;border-bottom:1px solid color-mix(in srgb,var(--empty) 45%,transparent)}
+.scales li b{color:var(--ink-2);font-weight:600}
+.scales li span{color:var(--muted)}
+/* legend row under the grid (the hour panel that also used this is gone) */
+.hkey{display:flex;flex-wrap:wrap;gap:16px;align-items:center;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
+.hkey i{display:inline-block;width:11px;height:11px;border-radius:2px;
+  margin-right:6px;vertical-align:-1px}
+/* a second paragraph inside one definition, not a lesser one: same size,
+   same colour, same leading as the other three */
+.defs .sub{display:block;margin-top:7px;font-size:inherit;color:inherit;
+  line-height:inherit}
+.stats{display:flex;gap:14px;text-align:right}
+.stat .sv{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;
+  font-size:18px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.stat.great .sv{color:var(--great)} .stat.good .sv{color:var(--good)}
+/* every figure in this row explains itself on hover, and the Winters one
+   changes meaning with the selected tier, so signal that they are hoverable */
+.stat.hastip{cursor:help}
+.stat.hastip .sl{border-bottom:1px dotted var(--rule)}
+.stat .sl{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);margin-top:5px}
+.plot{grid-column:1/-1;overflow-x:auto}
+.grid{display:grid;gap:1.5px;min-width:290px}
+.dlab,.ylab{font-family:"IBM Plex Mono",monospace;font-size:8.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums}
+.dlab{text-align:center;padding-bottom:3px;line-height:1.12}
+.dlab.trip{color:var(--ink-2);font-weight:500}
+.tripband{font-family:"IBM Plex Mono",monospace;font-size:8px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2);text-align:center;
+  border-top:2px solid var(--ink-2);padding-top:2px;margin-bottom:3px}
+.ylab{display:flex;align-items:center;justify-content:flex-end;padding-right:4px}
+.cell{position:relative;aspect-ratio:1;border-radius:1.5px;background:var(--empty);min-height:9px}
+.cell[data-t="good"]{background:var(--good)}
+.cell[data-t="great"]{background:var(--great)}
+/* No ring on Epic, and none needed: the three hues clear every check on their
+   own in both themes. The binding constraint was PROTANOPIA, where magenta
+   loses its red and reads blue -- pure #0000FF sat at dE 7.9 against it, inside
+   the band that demands a second channel. Hue could not fix that (moving the
+   blue toward cyan made it worse, to 1.1); lightness could, and #0F62FE lands
+   at 8.8. */
+.cell[data-t="epic"]{background:var(--epic)}
+.cell[data-trip="0"]{opacity:.45}
+/* Epic is the rarest thing on the grid -- roughly one day a season -- so almost
+   every one of them falls outside the chosen window. Dimming the rarest tier
+   as hard as the rest defeats the point of marking it, so these dim less. */
+.cell[data-t="epic"][data-trip="0"]{opacity:.68}
+.cell.absent{background:transparent}
+.cell.hold::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;
+  background:var(--wind);border-radius:1.5px 1.5px 0 0;z-index:1}
+.terr{grid-column:1/-1;display:flex;gap:11px;flex-wrap:wrap;font-family:"IBM Plex Mono",monospace;
+  font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;
+  border-top:1px solid var(--rule);padding-top:9px}
+.terr b{color:var(--ink-2);font-weight:600}
+.tmap{color:var(--good-ink);text-decoration:none;
+  border-bottom:1px solid color-mix(in srgb,var(--good-ink) 40%,transparent)}
+.tmap:hover{border-bottom-color:var(--good-ink)}
+.tmap:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
+.tip{position:fixed;z-index:50;pointer-events:none;background:var(--ink);color:var(--ground);
+  border-radius:3px;padding:9px 11px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+  line-height:1.5;opacity:0;transition:opacity .1s;font-variant-numeric:tabular-nums;
+  white-space:nowrap}
+.tip.on{opacity:1}
+.tip b{font-weight:600}
+/* labels in one column, values in the next: every value starts at the same
+   indent, and nothing wraps because the tip sizes to its widest row */
+.tip .tg{display:grid;grid-template-columns:max-content max-content;
+  column-gap:12px;margin-top:5px}
+.tip .tg span:nth-child(odd){color:var(--snow)}
+/* a phone cannot show an unwrapped 460px row; below that, let the value column
+   wrap rather than run off the screen. Labels stay aligned either way. */
+@media (max-width:560px){
+  .tip{white-space:normal;max-width:calc(100vw - 24px)}
+  .tip .tg{grid-template-columns:max-content minmax(0,1fr)}
+}
+
+/* ---- failure bars ---- */
+.fails{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:20px}
+.fcard{background:var(--surface);border:1px solid var(--rule);border-radius:3px;padding:12px 14px}
+.fcard h4{font-family:Archivo,sans-serif;font-weight:700;font-size:14px;margin:0 0 9px}
+.frow{display:grid;grid-template-columns:92px 1fr 34px;gap:7px;align-items:center;
+  font-family:"IBM Plex Mono",monospace;font-size:10px;color:var(--muted);margin-bottom:4px}
+/* the group rule, and the group's own share on the right */
+.fgrp{display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  font-family:Archivo,sans-serif;font-size:9px;font-weight:700;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--muted);
+  border-top:1px solid var(--rule);margin:9px 0 6px;padding-top:7px}
+.fgrp b{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:400;
+  letter-spacing:0;text-transform:none;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.ftrack{height:7px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.ffill{height:100%;border-radius:3px;background:var(--ink-2)}
+.ffill.g{background:var(--great)} .ffill.w{background:var(--wind)}
+.fval{text-align:right;color:var(--ink-2);font-variant-numeric:tabular-nums}
+
+.callout{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--great);
+  border-radius:3px;padding:15px 18px;margin-top:20px}
+.callout h3{font-family:Archivo,sans-serif;font-weight:700;font-size:16px;margin:0 0 7px}
+.callout p{margin:.5em 0;color:var(--ink-2);font-size:14px;max-width:74ch}
+table{border-collapse:collapse;width:100%;font-family:"IBM Plex Mono",monospace;font-size:11.5px;
+  font-variant-numeric:tabular-nums;margin-top:12px}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--rule)}
+th:first-child,td:first-child{text-align:left}
+th{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.tblwrap{overflow-x:auto}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <p class="eyebrow"><span data-meta="resortCount"></span> &middot; <span data-meta="winterCount"></span> &middot; <span data-meta="hours"></span> hours &middot; <span data-meta="years"></span></p>
+  <h1>Seven Hours</h1>
+  <p class="dek">A riding day is not a day. It is the seven hours the lifts turn, and the weather
+  inside those hours moves &mdash; warming, clouding, gusting &mdash; in ways a daily average
+  erases completely. This is the same question as before, asked of hourly data.</p>
+
+  <hr class="rule">
+  <h2>Your trip, replayed <span data-meta="winters"></span> times<span class="n" id="winlab"></span></h2>
+  <p class="lead">Pick your dates. Every winter on record is scored over that same window &mdash;
+  <span data-meta="winters"></span> rows, one per winter, one column per day. The old version of
+  this had nine winters to work with; a six-day window across <span data-meta="winters"></span> is
+  <span data-meta="obs6"></span> observations per resort instead of 54.</p>
+
+  <div class="hkey" style="margin:14px 0 0">
+    <span><i style="background:var(--good)"></i>good day</span>
+    <span><i style="background:var(--great)"></i>great day</span>
+    <span><i style="background:var(--epic)"></i>epic day</span>
+    <span><i style="background:var(--wind);height:4px"></i>red top edge = wind hold (40+ mph gusts over half the day)</span>
+  </div>
+
+  <div class="defs">
+    <div><span class="dt epic">Epic</span>Everything Great&rsquo;s snow path asks for, with
+      <b>4 inches or more in the last 24 hours</b> instead of 2. So Epic is a strict tightening
+      of Great rather than a separate idea, and every Epic day is also Great and Good.
+      <span class="sub">Every snow test here is an <b>absolute depth</b>, never a percentile.
+      That distinction is the whole ranking: a per-resort percentile hands every mountain the
+      same quota of big-snow days however little it snows, and under that rule Mt. Lemmon &mdash;
+      which averages about ten inches of snow in a <i>whole season</i> &mdash; scored more Epic
+      days than Alta, because its own 95th percentile was a fifth of an inch. Resorts without a
+      gauge are judged on modelled inches converted to their own scale, not on their own
+      ranking.</span>
+      It is rare by design: <b><span data-meta="epicRange"></span></b> across the <span data-meta="resorts"></span> resorts loaded here.</div>
+    <div><span class="dt great">Great</span>A week with <b>5 inches or more</b> behind it, plus
+      <i>either</i> <b>sun and Comfortable temperatures</b>, <i>or</i> <b>2 inches or more in the
+      last 24 hours</b>. Two ways to earn it: a good week you can see, or a good week that just
+      topped itself up.
+      <span class="sub">The week is the floor on both paths, and it is what stopped the warm dry
+      hills from topping this list &mdash; they can be sunny and comfortable all winter, but they
+      cannot produce five inches in seven days.
+      <b>SNOTEL supplies the number wherever it can</b>: the snowfall is what the stations near
+      the mountain actually weighed, not what the reanalysis produced. The gate is 35&nbsp;km,
+      widened to 60&nbsp;km where fewer than three stations are that close. Where no gauge is in
+      range the same inches are tested against the model, scaled by how far that resort&rsquo;s
+      modelled snowfall sits from its measured record, and the card says <i>no gauge in range
+      &mdash; snow modelled</i> instead of carrying a SNOTEL badge. Measured depth gain
+      under-reads, because the pack settles between daily readings, so a gauged resort is held to
+      a slightly harder line than an ungauged one.</span></div>
+    <div><span class="dt good">Good</span><b>Felt temperature 16&ndash;45&deg;F</b>, <b>no wind
+      hold</b> (gusts under 40&nbsp;mph for more than half the day), <b>no flat light</b>, and
+      <b>no rain on snow</b>. Any sky is allowed &mdash; but if it is <b>Mostly Cloudy or
+      Cloudy</b>, the day must be <b>Comfortable or Warm</b>, or else have a 2-inch week behind
+      it. Worth the lift ticket; not necessarily memorable.
+      <span class="sub">Cloud alone no longer disqualifies a day, which is what lets an overcast
+      powder morning be Good and therefore Epic. What it costs you is warmth: grey <i>and</i>
+      chilly <i>and</i> no snow is the combination that fails.
+      Base depth is <b>reported but not tested</b>. It used to be a floor of 6 inches of settled
+      snow, and it was the wrong gate: neither ERA5 nor SNOTEL can see snowmaking, so the test
+      measured natural cover and marked days Meh at resorts that had in fact opened.</span></div>
+    <div><span class="dt meh">Meh</span>Anything that misses one of those. The tooltip on each
+      cell names the single reason, in the order they are checked: rain on snow, wind hold,
+      flat light, too cold, too warm, cloudy and cold.</div>
+  </div>
+
+  <div class="scales">
+    <div>
+      <h4>Felt temperature</h4>
+      <ul>
+        <li><b>Bitter cold</b><span>under 10&deg;F</span></li>
+        <li><b>Very cold</b><span>10&ndash;15&deg;F</span></li>
+        <li><b>Chilly</b><span>16&ndash;19&deg;F</span></li>
+        <li><b>Comfortable</b><span>20&ndash;32&deg;F</span></li>
+        <li><b>Warm</b><span>33&ndash;45&deg;F</span></li>
+        <li><b>Very warm</b><span>over 45&deg;F</span></li>
+      </ul>
+      <p class="fine">Apparent temperature averaged over the lift hours, with the coldest and
+      warmest hour in brackets. A Good day starts at the bottom of <b>Chilly</b>, so the band
+      boundary and the rule are the same number. <b>Comfortable</b> does a second job: it is the
+      temperature a day needs before heavy cloud is forgiven.</p>
+    </div>
+    <div>
+      <h4>Sky</h4>
+      <ul>
+        <li><b>Bluebird</b><span>5% or less opaque cloud</span></li>
+        <li><b>Sunny</b><span>5&ndash;12.5%</span></li>
+        <li><b>Mostly sunny</b><span>12.5&ndash;37.5%</span></li>
+        <li><b>Partly sunny</b><span>37.5&ndash;62.5%</span></li>
+        <li><b>Mostly cloudy</b><span>62.5&ndash;87.5%</span></li>
+        <li><b>Cloudy</b><span>87.5&ndash;100%</span></li>
+        <li><b>Flat light</b><span>any of the above, but low cloud sat on the hill
+          over half the lift day</span></li>
+      </ul>
+      <p class="fine">Share of the sky covered by <b>opaque</b> cloud &mdash; the thicker of the
+      low and mid layers, averaged over the lift hours. High cirrus is left out, being the kind
+      you can ski under quite happily; counting it would read 38% of all winter days as fully
+      overcast against 25% without it. Flat light outranks all six because a bright overcast you
+      cannot read terrain through is the condition that actually ruins the riding. It is
+      <b><span data-meta="flatLightPct"></span> of all Dec&ndash;Apr days</b> across the
+      mountains on this page.</p>
+    </div>
+  </div>
+
+  <!-- the filter row sits with the cards it filters, below the key that
+       explains them, so the controls and their result are one block -->
+  <div class="controls">
+    <span class="eyebrow" style="margin-right:4px">Travelling</span>
+    <input type="date" id="from" value="2027-02-23" min="2026-12-01" max="2027-04-30" aria-label="Trip start">
+    <span class="eyebrow">to</span>
+    <input type="date" id="to" value="2027-02-28" min="2026-12-01" max="2027-04-30" aria-label="Trip end">
+    <label class="eyebrow" style="margin-left:8px" for="pad">Context</label>
+    <select id="pad" aria-label="Padding days">
+      <option value="0">exact</option><option value="2">&plusmn;2d</option>
+      <option value="4" selected>&plusmn;4d</option><option value="7">&plusmn;7d</option>
+    </select>
+    <span class="eyebrow" style="margin-left:10px">Sort</span>
+    <button class="sort" data-k="good" aria-pressed="true">Good days</button>
+    <button class="sort" data-k="great" aria-pressed="false">Great days</button>
+    <button class="sort" data-k="epic" aria-pressed="false">Epic days</button>
+    <button class="sort" data-k="peak" aria-pressed="false">Peak price</button>
+    <button class="sort" data-k="adv" aria-pressed="false">Advance price</button>
+    <span id="warn" class="warn"></span>
+  </div>
+  <!-- Which mountains, as opposed to which dates. Kept as its own row directly
+       above the cards: 230 of them is more than anyone scrolls, so narrowing
+       the set is the first thing most people do. -->
+  <div class="chips" id="fregions" role="group" aria-label="Filter by region">
+    <span class="eyebrow" style="margin-right:2px">Regions</span>
+  </div>
+  <div class="controls" id="filters">
+    <span class="eyebrow" style="margin-right:4px">Showing</span>
+    <select id="fstate" aria-label="State or province"><option value="">All states</option></select>
+    <select id="fvert" aria-label="Minimum vertical drop">
+      <option value="0">Any vertical</option>
+      <option value="1000">1,000 ft +</option>
+      <option value="1500">1,500 ft +</option>
+      <option value="2000">2,000 ft +</option>
+      <option value="2500">2,500 ft +</option>
+      <option value="3000">3,000 ft +</option>
+    </select>
+    <label class="eyebrow" for="fy1" style="margin-left:6px">Winters</label>
+    <select id="fy1" aria-label="First winter"></select>
+    <span class="eyebrow">to</span>
+    <select id="fy2" aria-label="Last winter"></select>
+    <select id="fterr" aria-label="Terrain">
+      <option value="">Any terrain</option>
+      <option value="green">Beginner-friendly &mdash; 30%+ easy</option>
+      <option value="blue">Cruisers &mdash; 50%+ intermediate</option>
+      <option value="black">Steep &mdash; 50%+ advanced</option>
+    </select>
+    <input type="search" id="fname" placeholder="Find a mountain" aria-label="Find a mountain"
+           autocomplete="off" style="min-width:158px">
+    <button class="sort" id="fclear" hidden>Clear</button>
+    <span id="fcount" class="fcount"></span>
+  </div>
+  <div class="grids" id="grids"></div>
+
+  <div class="callout" style="border-left-color:var(--snow)">
+    <h3>Where the snow number comes from</h3>
+    <p><b>Measured wherever a gauge exists.</b> <span data-meta="gaugeCoverage"></span> SNOTEL
+    stations within 35&nbsp;km, so both snow tests are measurements rather than model output: the 72-hour snowfall
+    that decides whether a day is <i>fresh</i> (and therefore whether it can be <i>great</i>), and
+    the base depth that decides whether it is rideable at all (and therefore whether it can be
+    <i>good</i>). Two different stations answer them. Snowfall is the average of the whole
+    neighbourhood, because distance barely matters for it; base comes from the station closest in
+    <i>elevation</i>, because a gauge 2,000&nbsp;ft below mid-mountain holds a different snowpack.
+    ERA5 is kept alongside as a second opinion, and the tooltip shows both: the measured inches and
+    what the model said. Resorts with no gauge fall back to the model, and their cards say so.</p>
+    <p>Snow is <b>not drawn on the cells</b>. It used to be, as a bar rising from the bottom of
+    each square, and it was measured out of the design: on Great and Epic cells the bar sat at full
+    height 56% of the time and was never empty &mdash; it was redrawing the colour, since fresh snow
+    is what <i>makes</i> a day great. The one place it said something new was the worst place for it
+    to: <b>13% of the whole grid</b> is days that dumped and were still not worth riding &mdash;
+    too cold, flat light, wind or rain on snow. A tall bar there reads as a good sign at a glance
+    and means the opposite. The amounts live in the tooltip instead, in inches.</p>
+    <p>The rule behind the tiers is now <b>absolute inches</b>, not a percentile: five in a week,
+    two in a morning, four for Epic. The per-resort scaling did not go away, it moved &mdash; where
+    a gauge is in range the inches are simply measured, and where none is, the same inch figures are
+    converted into that resort&rsquo;s own modelled scale before being tested.
+    <b>The percentile had to go</b>, and the reason is worth stating plainly: it ranks each mountain
+    against itself, so it hands every one of them the same quota of big-snow days however little it
+    snows. Under that rule Mt.&nbsp;Lemmon &mdash; roughly ten inches of snow in a whole season
+    &mdash; scored more Epic days than Alta, because its own 95th percentile was a fifth of an inch.
+    A number that cannot tell those two mountains apart is not measuring snow.</p>
+    <p>The model&rsquo;s own inches were never usable: 4&ndash;5&times; too low by a factor that
+    differs per resort, so neither accurate nor comparable. That is what made the gauges worth
+    wiring in. The measured figures in the tooltip are two different things &mdash; <b>inches of new
+    snow depth</b>, which reads low because the pack settles between daily readings while a resort
+    clears its stake every few hours, and <b>inches of water</b>, which is the conserved quantity
+    and what the fresh line is actually computed from. On a fresh day the gauges averaged
+    4.4&ndash;11.1&Prime; of new snow and 0.67&ndash;1.96&Prime; of water across the nine resorts
+    this was calibrated on.</p>
+    <p>One thing the hourly data settles: snowfall has <b>no time-of-day preference</b>. The
+    overnight share was 69&ndash;72% at all nine resorts in that sample, which is exactly the
+    17-of-24 hour ratio. It does not
+    preferentially dump overnight.</p>
+  </div>
+
+
+  <hr class="rule">
+  <h2>Checking the fresh line against a gauge on the hill<span class="n">SNOTEL, 1999&ndash;2026</span></h2>
+  <p class="lead">Everything above rests on one claim: that the model can tell which <i>days</i>
+  snowed, even though its inches are wrong. That is testable. The NRCS runs automated SNOTEL sites
+  that weigh the snowpack directly, so the model&rsquo;s verdict on each day is scored against
+  theirs. What is being compared now is <b>the two-inch morning</b> &mdash; the line Great&rsquo;s
+  second path tests &mdash; rather than the percentile fresh line this section was originally
+  built around. The gauges decide the tiers wherever they reach, so what follows is the record of
+  how the reanalysis performed against them; ERA5&rsquo;s own verdict is kept in the data
+  precisely so this comparison stays honest.</p>
+
+  <div class="callout" style="border-left-color:var(--great)">
+    <h3>Both the alignment and the station gate were measured, not chosen</h3>
+    <p class="sub" style="margin-bottom:6px">Everything in this section was measured once, on a
+    nine-resort sample, and settled the rules the whole page now runs on. The counts below are that
+    experiment&rsquo;s results, not a description of the resorts currently loaded.</p>
+    <p>The model&rsquo;s window ends at the lift opening; a SNOTEL daily value ends at local
+    midnight. Testing lags of &minus;1, 0 and +1 days, <b>&minus;1 won at all nine stations</b>
+    (correlation .70&ndash;.90 against .43&ndash;.63 for +1), so that is the alignment used.</p>
+    <p>Which stations count was settled the same way. I first guessed a gate of 6&nbsp;km and
+    1,200&nbsp;ft, then scored 54 resort-station pairs out to 60&nbsp;km against the same model
+    output. Agreement turned out <b>flat from 0 to 35&nbsp;km</b> (&kappa; .635 / .599 / .634 / .608
+    by band) and near-flat against elevation offset (.62 down to .60 across 0 to over 1,500&nbsp;ft).
+    The nearest station was the best one at only <b>two of nine</b> resorts. The limit is
+    ERA5&rsquo;s ~25&nbsp;km grid cell, not where the gauge sits &mdash; so the tight gate was
+    discarding nine tenths of the usable stations for nothing.</p>
+    <p>Which suggested doing better than picking one. Averaging <b>every</b> station within
+    35&nbsp;km &mdash; each normalised by its own 80th percentile first, so a wet high station
+    cannot drown out a dry low one &mdash; beat the single nearest at <b>eight of nine</b> resorts,
+    lifting mean &kappa; from .632 to .691. Independent sensor noise averages out; the weather does
+    not. Water equivalent is the comparison quantity rather than depth, because depth accumulation
+    depends on how often somebody clears the stake, while water is conserved.</p>
+  </div>
+
+  <table class="vtab">
+    <thead><tr><th>Resort</th><th class="r">Gauges</th><th class="r">Nearest km</th><th class="r">Agreement</th><th class="r">Fresh days caught</th><th class="r">&kappa;</th></tr></thead>
+    <tbody><tr><td>Heavenly</td><td class="r">14</td><td class="r">2.7</td><td class="r">93%</td><td class="r">83%</td><td class="r">0.79</td></tr><tr><td>Sun Valley</td><td class="r">7</td><td class="r">11.6</td><td class="r">93%</td><td class="r">82%</td><td class="r">0.78</td></tr><tr><td>Wolf Creek</td><td class="r">6</td><td class="r">1.5</td><td class="r">91%</td><td class="r">78%</td><td class="r">0.73</td></tr><tr><td>Powder Mountain</td><td class="r">9</td><td class="r">1.3</td><td class="r">91%</td><td class="r">78%</td><td class="r">0.72</td></tr><tr><td>Angel Fire</td><td class="r">6</td><td class="r">4.2</td><td class="r">90%</td><td class="r">74%</td><td class="r">0.68</td></tr><tr><td>Whitefish Mountain</td><td class="r">3</td><td class="r">30.9</td><td class="r">89%</td><td class="r">71%</td><td class="r">0.66</td></tr><tr><td>Snowbird</td><td class="r">13</td><td class="r">1.2</td><td class="r">89%</td><td class="r">71%</td><td class="r">0.65</td></tr><tr><td>Showdown Montana</td><td class="r">5</td><td class="r">5.1</td><td class="r">88%</td><td class="r">69%</td><td class="r">0.62</td></tr><tr><td>Steamboat</td><td class="r">5</td><td class="r">8.3</td><td class="r">87%</td><td class="r">68%</td><td class="r">0.60</td></tr></tbody>
+  </table>
+  <p class="fine">Agreement is the share of Dec&ndash;Apr days the two flags call the same way.
+  &ldquo;Fresh days caught&rdquo; is the share of the gauges&rsquo; own fresh days the model found.
+  &kappa; is agreement above what the base rates alone would produce; 0.5&ndash;0.7 is conventionally
+  moderate to substantial.</p>
+
+  <div class="callout" style="border-left-color:var(--snow)">
+    <h3>The model&rsquo;s confidence is calibrated</h3>
+    <p>The binary flag understates it. Sorted by how far past its own fresh line the model put each
+    day, the share the gauge also called fresh rises cleanly:</p>
+    <table class="vtab tight">
+      <thead><tr><th>Model&rsquo;s 72h snow</th><th class="r">Days</th>
+      <th class="r">Gauge agrees</th></tr></thead>
+      <tbody>
+      <tr><td>well under the line</td><td class="r">26,152</td><td class="r">3%</td></tr>
+      <tr><td>0.7&ndash;1.0&times; (just under)</td><td class="r">3,227</td><td class="r">31%</td></tr>
+      <tr><td>1.0&ndash;1.5&times; (just over)</td><td class="r">3,410</td><td class="r">60%</td></tr>
+      <tr><td>1.5&ndash;2.0&times;</td><td class="r">1,704</td><td class="r">81%</td></tr>
+      <tr><td>2.0&times; and above</td><td class="r">2,263</td><td class="r">95%</td></tr>
+      </tbody>
+    </table>
+    <p>So a day well past its fresh line is trustworthy and one sitting on it is a coin flip. Most of the
+    disagreement is days near the threshold, where binarising a continuous quantity manufactures
+    it &mdash; the raw 72-hour amounts correlate .70&ndash;.90.</p>
+    <p><b>Distance still barely matters.</b> Sun Valley&rsquo;s nearest gauge is 11.6&nbsp;km away
+    and it scores second; Snowbird has thirteen gauges with the nearest at 1.2&nbsp;km and scores
+    seventh. The residual disagreement is the reanalysis smoothing terrain inside a 25&nbsp;km cell,
+    not the gauges sitting in the wrong spot.</p>
+    <p>The same 35&nbsp;km rule reaches <b><span data-meta="snotelReach"></span> of the
+    <span data-meta="refResorts"></span> resorts</b> in the file, against 72 under the original
+    guess. Only <span data-meta="badged"></span> carry the badge today, because the badge needs hourly
+    ERA5 as well and that has been fetched for <span data-meta="resorts"></span> so far. The
+    measured side is loaded and waiting for the rest.</p>
+    <p><b>This test found a real bug.</b> The fresh line was originally computed by taking the
+    rolling window <i>after</i> sampling one row per day, which sums 72 separate 9&nbsp;a.m. hours
+    spread over 72 days: the right average, but far too smooth a distribution. Its 80th percentile
+    sat ~25% low, and the model was calling 25&ndash;30% of days fresh instead of 20%. Every
+    figure on this page is post-fix.</p>
+  </div>
+
+  <hr class="rule">
+  <h2>Where the days go<span class="n">share of all Dec&ndash;Apr days</span></h2>
+  <p class="lead">Every Dec&ndash;Apr day, filed under the first thing that stopped it. The two
+  groups are not the same kind of thing and are worth reading separately: the first is days that
+  <b>went wrong</b>, the second is days that were perfectly rideable and simply had no snow behind
+  them &mdash; <b>Good days that fell short of Great</b>, not failures. The green bar on top is the
+  share that cleared both. Only the hourly feed can separate the first group at all: wind holds,
+  flat light and rain-on-snow are invisible in a daily summary.</p>
+  <div class="fails" id="fails"></div>
+
+  <hr class="rule">
+  <h2>What this model gets wrong</h2>
+  <div class="callout">
+    <h3>Snowfall amount is not usable, and the error is not uniform</h3>
+    <p>Passing each resort's mid-mountain elevation to the API fixes temperature. It does not fix
+    precipitation. Orographic enhancement &mdash; the reason a Wasatch ridge triples what the valley
+    gets &mdash; happens entirely inside a ~25&nbsp;km grid cell, so the reanalysis cannot see it.
+    Modelled Dec&ndash;Apr snowfall against published annual averages:</p>
+    <div class="tblwrap"><table><thead><tr>
+      <th scope="col">Resort</th><th scope="col">Modelled Dec&ndash;Apr</th>
+      <th scope="col">Published annual</th><th scope="col">Ratio</th></tr></thead>
+      <tbody>
+        <tr><td>Snowbird &mdash; UT</td><td>98&Prime;</td><td>~403&Prime;</td><td>4.1&times;</td></tr>
+        <tr><td>Wolf Creek &mdash; CO</td><td>87&Prime;</td><td>~430&Prime;</td><td>4.9&times;</td></tr>
+        <tr><td>Heavenly &mdash; CA</td><td>166&Prime;</td><td>~360&Prime;</td><td>2.2&times;</td></tr>
+      </tbody></table></div>
+    <p>Note the ratios differ, which is worse than the magnitude being wrong: <b>the ordering
+    inverts</b>. Of the nine resorts this was checked on, Wolf Creek is the snowiest in reality and
+    comes fourth in the model; Heavenly is among the driest and comes first. So every snow measure here is expressed
+    <b>relative to each resort's own record</b> &mdash; "is this a snowy day for this mountain" &mdash;
+    which survives a per-resort multiplicative bias even though the raw inches do not.</p>
+    <p><b>Base depth was a test here, and it was dropped.</b> It went through two forms. First a
+    per-resort percentile, which by construction rejected the same share of days everywhere,
+    including midwinter days sitting on plenty of snow. Then an absolute floor of six inches of
+    settled snow, converted per resort because modelled depth runs 0.38&times; to 0.95&times; of
+    measured depending on the mountain.</p>
+    <p>The floor was the better rule and still the wrong one, for a reason no amount of calibration
+    fixes: <b>neither ERA5 nor SNOTEL can see snowmaking</b>. Both measure natural cover, so the
+    test marked days Meh at resorts that had groomed, opened and sold tickets &mdash; and it did it
+    hardest to exactly the mountains that depend on making their own, the dry and the low. A model
+    that cannot see the snow a resort makes should not be ruling on whether you can ride.</p>
+    <p>So base is <b>reported, not tested</b>. Every card prints its base and summit, every day
+    still carries a measured or modelled depth, and <span data-meta="baseMeasuredPct"></span> of
+    days take that depth from an elevation-matched gauge rather than the model. Read it as natural
+    cover, and as context for the tiers rather than a gate on them.</p>
+  </div>
+  <div class="notes">
+    <p><b>What the reanalysis does do well</b>, and what this therefore leans on: temperature
+    (elevation-corrected to mid-mountain), apparent temperature, wind, cloud layers and
+    precipitation phase. Those are comparable across resorts. Snow amount is not.</p>
+    <p><b>Wind chill is the quietly large effect.</b> Across all lift hours the gap between air
+    temperature and what it feels like averages 7.6&nbsp;&deg;F and reaches 20.3&nbsp;&deg;F. A daily
+    high of 28&nbsp;&deg;F is a different day at Showdown, where the gap averages 9.2&nbsp;&deg;F,
+    than at Powder Mountain, where it averages 7.0&nbsp;&deg;F.</p>
+    <!-- Two states, and the wrong one is actively misleading: while resorts are
+         still being fetched this has to say so, and once the file is fully
+         loaded "431 resorts, not 431" is nonsense. Written by the script. -->
+    <p id="coverageNote"></p>
+  </div>
+</div>
+<div class="tip" id="tip" role="status" aria-live="polite"></div>
+

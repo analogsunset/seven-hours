@@ -1,0 +1,155 @@
+// Does the hosted payload say what the database says?
+//
+// The artifact build's _hverify.js exists to catch POSITIONAL drift: four files
+// had to agree on the order of 19 alphabet slots, and twice they quietly did
+// not. The hosted build ships named JSON, so that failure mode is gone -- but a
+// columnar file can still have two columns transposed, and the index derives
+// three bits from fields it does not itself carry. So this checks the same
+// thing by a different route: every value against the SQL export it came from,
+// BY NAME.
+//
+// It STREAMS. _skidays_all.txt is 1.76 million rows for 431 resorts, and
+// holding them as objects exhausts Node's default heap. The export is
+// ORDER BY ResortName, ObsDate, so rows arrive grouped: accumulate one resort,
+// verify it, discard it. Memory stays flat whatever the resort count.
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline');
+
+const DAY_COLS = ['name','date','season','good','great','epic','covered','fresh',
+  'app','sun','gust','hold','flat','snow72','base','reason','measRel','vis',
+  'appLo','appHi','newSnow72','swe72','newSnow24','failMask','temp','tempLo',
+  'tempHi','opq','snow24','snow168','newSnow168'];
+const C = {}; DAY_COLS.forEach((k, i) => { C[k] = i; });
+
+const idx = JSON.parse(fs.readFileSync(path.join('web', 'index.json'), 'utf8'));
+const FAILS = idx.meta.fails, DETAIL = idx.meta.detail;
+const IDXCH = '0123456789ABCDEF';
+const r0 = x => (x >= 0 ? Math.floor(x + 0.5) : -Math.floor(-x + 0.5));
+const num = v => (v === '' || v === 'NULL' ? null : +v);
+
+const byName = new Map(idx.resorts.map(r => [r.name, r]));
+const bad = [];
+let checked = 0, dayCount = 0, resortsSeen = 0;
+
+function verifyResort(name, rows) {
+  const r = byName.get(name);
+  if (!r) { bad.push(name + ': in SQL but not in the index'); return; }
+  resortsSeen++;
+
+  const det = JSON.parse(fs.readFileSync(path.join('web', 'day', r.slug + '.json'), 'utf8'));
+  const col = {}; DETAIL.forEach((k, i) => { col[k] = det[i]; });
+  const cells = r.s.reduce((a, s) => a + s.length, 0);
+  if (det.length !== DETAIL.length)
+    bad.push(name + ': detail has ' + det.length + ' columns, expected ' + DETAIL.length);
+  for (const k of DETAIL)
+    if (col[k].length !== cells)
+      bad.push(name + ' column ' + k + ': ' + col[k].length + ' values, grid has ' + cells);
+  if (bad.length) return;
+
+  const byDate = new Map(rows.map(q => [q[C.date], q]));
+  let p = 0;
+  for (let j = 0; j < r.s.length; j++) {
+    const y = r.y0 + j, s = r.s[j], d0 = Date.UTC(y, 11, 1);
+    for (let i = 0; i < s.length; i++, p++) {
+      const key = new Date(d0 + i * 86400000).toISOString().slice(0, 10).replace(/-/g, '');
+      const q = byDate.get(key);
+      if (s[i] === ' ') { if (q) bad.push(name + '|' + key + ': index blank, SQL has it'); continue; }
+      if (!q) { bad.push(name + '|' + key + ': index has a day SQL does not'); continue; }
+      dayCount++;
+
+      const v = IDXCH.indexOf(s[i]);
+      const app = r0(+q[C.app]), tmp = +q[C.temp];
+      const wk = r.weekCut, c24 = r.cut24;
+      const n168 = num(q[C.newSnow168]), n72 = num(q[C.newSnow72]),
+            n24 = num(q[C.newSnow24]), swe = num(q[C.swe72]);
+      const wkModel = r0(Math.min(3, wk ? +q[C.snow168] / wk : 0) * 30);
+
+      const chk = [
+        ['tier',  v & 3, (+q[C.epic] ? 3 : (+q[C.great] ? 2 : (+q[C.good] ? 1 : 0)))],
+        ['held',  (v >> 2) & 1, ((+q[C.failMask] & 2) ? 1 : 0)],
+        ['week',  (v >> 3) & 1, (wkModel >= 30 ? 1 : 0)],
+        ['app',      col.app[p],      app],
+        ['appLo',    col.appLo[p],    Math.max(0, Math.min(91, app - r0(+q[C.appLo])))],
+        ['appHi',    col.appHi[p],    Math.max(0, Math.min(91, r0(+q[C.appHi]) - app))],
+        ['temp',     col.temp[p],     r0(tmp)],
+        ['tempLo',   col.tempLo[p],   Math.max(0, Math.min(91, r0(tmp) - r0(+q[C.tempLo])))],
+        ['tempHi',   col.tempHi[p],   Math.max(0, Math.min(91, r0(+q[C.tempHi]) - r0(tmp)))],
+        ['opq',      col.opq[p],      r0(+q[C.opq] / 2) * 2],
+        ['gust',     col.gust[p],     r0(Math.min(90, +q[C.gust]))],
+        ['reason',   col.reason[p],   FAILS.indexOf(q[C.reason])],
+        ['fail',     col.fail[p],     +q[C.failMask]],
+        ['wkModel',  col.wkModel[p],  wkModel],
+        ['wkMeas',   col.wkMeas[p],   n168 === null ? null : r0(Math.min(3, n168 / 5) * 30)],
+        ['d24Model', col.d24Model[p], r0(Math.min(3, c24 ? +q[C.snow24] / c24 : 0) * 30)],
+        ['d24Meas',  col.d24Meas[p],  n24 === null ? null : Math.min(91, r0(n24))],
+        ['d72Meas',  col.d72Meas[p],  n72 === null ? null : Math.min(91, r0(n72))],
+        ['swe',      col.swe[p],      swe === null ? null : Math.min(91, r0(swe * 10))]
+      ];
+      for (const c of chk) {
+        checked++;
+        if (c[1] !== c[2] && bad.length < 12)
+          bad.push(name + '|' + key + ' ' + c[0] + ': web=' + c[1] + ' sql=' + c[2]);
+      }
+    }
+  }
+}
+
+(async function main() {
+  console.log('resorts in index :', idx.resorts.length);
+
+  const rl = readline.createInterface({
+    input: fs.createReadStream('_skidays_all.txt', { encoding: 'utf8' }),
+    crlfDelay: Infinity
+  });
+  let cur = null, rows = [], sqlRows = 0;
+  for await (const line of rl) {
+    const q = line.split('|');
+    if (q.length !== DAY_COLS.length) continue;
+    for (let i = 0; i < q.length; i++) q[i] = q[i].trim();
+    sqlRows++;
+    if (q[0] !== cur) {
+      if (cur !== null) verifyResort(cur, rows);
+      cur = q[0]; rows = [];
+      if (bad.length >= 12) break;
+    }
+    rows.push(q);
+  }
+  if (cur !== null && bad.length < 12) verifyResort(cur, rows);
+
+  console.log('SQL day rows     :', sqlRows.toLocaleString());
+  console.log('resorts verified :', resortsSeen);
+  console.log('days checked     :', dayCount.toLocaleString());
+  console.log('field comparisons:', checked.toLocaleString());
+  console.log('MISMATCHES:', bad.length);
+  bad.slice(0, 12).forEach(b => console.log('   ', b));
+  if (bad.length) process.exit(1);
+
+  // ---- parity with the artifact build, on the 154 resorts it covers --------
+  const subset = new Set();
+  for (const line of fs.readFileSync('_resorts.txt', 'utf8').split('\n')) {
+    const q = line.split('|');
+    if (q.length === 30) subset.add(q[0].trim());
+  }
+  let g = 0, gr = 0, ep = 0, seasons = 0;
+  for (const r of idx.resorts) {
+    if (!subset.has(r.name)) continue;
+    seasons += r.s.length;
+    for (const s of r.s) for (const ch of s) {
+      if (ch === ' ') continue;
+      const t = IDXCH.indexOf(ch) & 3;
+      if (t >= 1) g++;
+      if (t >= 2) gr++;
+      if (t >= 3) ep++;
+    }
+  }
+  const f = n => +(n / seasons).toFixed(2);
+  console.log('\nparity on the artifact build\'s ' + subset.size + ' resorts, per resort-season:');
+  console.log('  Good  ' + f(g).toFixed(2) + '   (artifact build: 59.67)');
+  console.log('  Great ' + f(gr).toFixed(2) + '   (artifact build:  8.71)');
+  console.log('  Epic  ' + f(ep).toFixed(2) + '   (artifact build:  0.98)');
+  const off = [[f(g), 59.67], [f(gr), 8.71], [f(ep), 0.98]]
+    .filter(x => Math.abs(x[0] - x[1]) > 0.02);
+  if (off.length) { console.log('PARITY FAILED'); process.exit(1); }
+  console.log('parity OK');
+})();

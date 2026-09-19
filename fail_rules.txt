@@ -1,0 +1,91 @@
+Based on the data you have access to in the database, propose a more accurate way to measure Wind. For example, a single peak gust > 40 mph from 9-10am is very different from sustained winds.
+
+
+FELT TEMPERATURES
+- apparent temperatures
+
+Bitter Cold: under 10�F
+Very Cold: 10�15�F
+Chilly: 16�19�F
+Comfortable: 20�32�F
+Warm: 33�45�F
+Very warm: over 45�F
+
+SKY CONDITIONS
+- sky cover based on percent of the sky covered by opaque (not transparent) clouds
+
+Bluebird: 5% or less of the sky covered by opaque clouds for the lift day
+Sunny: 5% to 12.5% of the sky covered by opaque clouds for the lift day
+Mostly Sunny: 12.5% to 37.5% of the sky covered by opaque clouds for the lift day
+Partly Sunny: 37.5% to 62.5% of the sky covered by opaque clouds for the lift day
+Mostly Cloudy: 62.5% to 87.5% of the sky covered by opaque clouds for the lift day
+Cloudy: 87.5% to 100% of the sky covered by opaque clouds for the lift day
+Flat Light: low cloud sat on the hill over half the lift day
+
+MEH
+Too Warm = Very warm
+Too Windy = gusts of 40mph+ for over half of the lift day
+Rain = Rain on Snow
+Flat Light = Flat Light
+Too Cold = Bitter Cold OR Very Cold
+Cloudy and Cold = Mostly Cloudy or Cloudy AND Chilly
+
+GOOD
+Felt temperature = Chilly, Comfortable, or Warm
+Sky cover = Bluebird through Cloudy
+*If Cloudy or Mostly Cloudy, temperature must be Comfortable or Warm
+Flat Light = No Flat Light
+Wind = gusts under 40 mph for more than half the lift day
+Rain = No Rain on Snow
+
+GREAT
+Felt temperature = Comfortable or Warm 
+Sky cover = Bluebird through Mostly Sunny
+Flat Light = No Flat Light
+Wind = gusts under 40 mph for more than half the lift day
+Rain = No Rain on Snow
+1 week fresh snow = Had 5 inches of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
+
+OR
+
+Felt temperature = Chilly, Comfortable, or Warm 
+Sky cover = Bluebird through Cloudy
+*If Cloudy, Mostly Cloudy, Partly Sunny, Mostly Sunny, temperature must be Comfortable or Warm
+Flat Light = No Flat Light
+Wind = gusts under 40 mph for more than half the lift day
+Rain = No Rain on Snow
+1 week fresh snow = Had 5 inches or more of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
+24 hour fresh snow = Had 2 inches or more of fresh snow in the last 24 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 24 hours.
+
+EPIC
+Felt temperature = Chilly, Comfortable, or Warm 
+Sky cover = Bluebird through Cloudy
+*If Cloudy, Mostly Cloudy, Partly Sunny, Mostly Sunny, temperature must be Comfortable or Warm
+Flat Light = No Flat Light
+Wind = gusts under 40 mph for more than half the lift day
+Rain = No Rain on Snow
+1 week fresh snow = Had 5 inches or more of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
+24 hour fresh snow = Had 4 inches or more of fresh snow in the last 24 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 24 hours.
+
+
+
+
+
+
+
+NOTES ON WHAT THE DATA CAN ACTUALLY SUPPORT
+- WIND is measured on GUSTS, not sustained speed. ERA5's 10m wind is a ~25 km
+  grid-cell mean: across 4.4 million lift hours it averages 5.3 mph and reaches
+  40.0 mph exactly once, so a sustained-40 rule would never fire in 27 winters.
+  The gust field (mean 20.3 mph, max 136) is the one carrying mountain wind.
+  The "over half the lift day" duration is applied to it, and fires on 4.9% of
+  days against 9.5% for the old any-single-hour rule.
+- The MODEL side of every snow test is a computed equivalent DEPTH, not a
+  percentile: the inch figure converted into that resort's own modelled scale.
+  A per-resort percentile ranks each mountain against itself and so hands every
+  one of them the same quota of big-snow days however little it snows. Under it
+  Mt. Lemmon -- about ten inches of snow in a whole season -- had a 0.17 inch
+  "4-inch" threshold and scored more Epic days than Alta.
+- SKY COVER uses the greater of the low and mid cloud layers, high cirrus
+  excluded, quantised to 2 points before anything is tested so the band label
+  and the printed percentage can never disagree.

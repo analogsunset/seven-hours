@@ -1,0 +1,25 @@
+# Build output. Both builds regenerate all of this from the database; the
+# hosted payload alone is 81 MB across 433 files and every build rewrites every
+# one of them, so committing it here would add that much to history per build.
+# It goes to the gh-pages branch instead -- see deploy_pages.py.
+seven_hours.html
+web/
+_hviz.json
+_hmeta.json
+
+# Pipeline intermediates. _hourly.txt reached 14 GB; GitHub's hard limit is 100 MB.
+_*.txt
+_export_batch.sql
+
+# Source data, far too large to version: 431 files, ~15 GiB.
+json/
+
+# Snapshots and backups
+*.bak*
+*.pre27-*
+*.orig
+
+__pycache__/
+*.pyc
+.claude/
+.DS_Store

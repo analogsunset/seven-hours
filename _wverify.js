@@ -19,7 +19,7 @@ const readline = require('readline');
 const DAY_COLS = ['name','date','season','good','great','epic','covered','fresh',
   'app','sun','gust','hold','flat','snow72','base','reason','measRel','vis',
   'appLo','appHi','newSnow72','swe72','newSnow24','failMask','temp','tempLo',
-  'tempHi','opq','snow24','snow168','newSnow168'];
+  'tempHi','opq','snow24','snow168','newSnow168','isWeek'];
 const C = {}; DAY_COLS.forEach((k, i) => { C[k] = i; });
 
 const idx = JSON.parse(fs.readFileSync(path.join('web', 'index.json'), 'utf8'));
@@ -68,7 +68,10 @@ function verifyResort(name, rows) {
       const chk = [
         ['tier',  v & 3, (+q[C.epic] ? 3 : (+q[C.great] ? 2 : (+q[C.good] ? 1 : 0)))],
         ['held',  (v >> 2) & 1, ((+q[C.failMask] & 2) ? 1 : 0)],
-        ['week',  (v >> 3) & 1, (wkModel >= 30 ? 1 : 0)],
+        // against SQL's own verdict. This line used to recompute it from
+        // modelled snow -- the same mistake the builder was making -- so the
+        // check confirmed the bug instead of catching it.
+        ['week',  (v >> 3) & 1, +q[C.isWeek]],
         ['app',      col.app[p],      app],
         ['appLo',    col.appLo[p],    Math.max(0, Math.min(91, app - r0(+q[C.appLo])))],
         ['appHi',    col.appHi[p],    Math.max(0, Math.min(91, r0(+q[C.appHi]) - app))],
@@ -126,15 +129,21 @@ function verifyResort(name, rows) {
   if (bad.length) process.exit(1);
 
   // ---- parity with the artifact build, on the 154 resorts it covers --------
+  // Counted from BOTH builds' own exports rather than against numbers typed in
+  // here, which go stale the moment the model changes -- as they just did.
+  const tiers = { good: 0, great: 0, epic: 0 };
   const subset = new Set();
-  for (const line of fs.readFileSync('_resorts.txt', 'utf8').split('\n')) {
+  for (const line of fs.readFileSync('_skidays.txt', 'utf8').split('\n')) {
     const q = line.split('|');
-    if (q.length === 30) subset.add(q[0].trim());
+    if (q.length !== DAY_COLS.length) continue;
+    subset.add(q[0].trim());
+    if (+q[C.good])  tiers.good++;
+    if (+q[C.great]) tiers.great++;
+    if (+q[C.epic])  tiers.epic++;
   }
-  let g = 0, gr = 0, ep = 0, seasons = 0;
+  let g = 0, gr = 0, ep = 0;
   for (const r of idx.resorts) {
     if (!subset.has(r.name)) continue;
-    seasons += r.s.length;
     for (const s of r.s) for (const ch of s) {
       if (ch === ' ') continue;
       const t = IDXCH.indexOf(ch) & 3;
@@ -143,13 +152,12 @@ function verifyResort(name, rows) {
       if (t >= 3) ep++;
     }
   }
-  const f = n => +(n / seasons).toFixed(2);
-  console.log('\nparity on the artifact build\'s ' + subset.size + ' resorts, per resort-season:');
-  console.log('  Good  ' + f(g).toFixed(2) + '   (artifact build: 59.67)');
-  console.log('  Great ' + f(gr).toFixed(2) + '   (artifact build:  8.71)');
-  console.log('  Epic  ' + f(ep).toFixed(2) + '   (artifact build:  0.98)');
-  const off = [[f(g), 59.67], [f(gr), 8.71], [f(ep), 0.98]]
-    .filter(x => Math.abs(x[0] - x[1]) > 0.02);
-  if (off.length) { console.log('PARITY FAILED'); process.exit(1); }
+  console.log('\nparity with the artifact build over its ' + subset.size + ' resorts:');
+  const cmp = [['Good', g, tiers.good], ['Great', gr, tiers.great], ['Epic', ep, tiers.epic]];
+  for (const [n, a, b] of cmp)
+    console.log('  ' + n.padEnd(6) + 'hosted ' + a.toLocaleString().padStart(9) +
+                '   artifact ' + b.toLocaleString().padStart(9) +
+                (a === b ? '   match' : '   *** DIFFER ***'));
+  if (cmp.some(([, a, b]) => a !== b)) { console.log('PARITY FAILED'); process.exit(1); }
   console.log('parity OK');
 })();

@@ -109,7 +109,7 @@ DAY_COLS = ['name', 'date', 'season', 'good', 'great', 'epic', 'covered', 'fresh
             'app', 'sun', 'gust', 'hold', 'flat', 'snow72', 'base', 'reason',
             'measRel', 'vis', 'appLo', 'appHi', 'newSnow72', 'swe72', 'newSnow24',
             'failMask', 'temp', 'tempLo', 'tempHi',
-            'opq', 'snow24', 'snow168', 'newSnow168']
+            'opq', 'snow24', 'snow168', 'newSnow168', 'isWeek']
 
 
 def num(v, cast=float):
@@ -133,13 +133,17 @@ for line in io.open('_skidays.txt', encoding='utf-8'):
         nsn, swe, n24 = num(d['newSnow72']), num(d['swe72']), num(d['newSnow24'])
         fmask = int(d['failMask'])
         tmp, tlo, thi = float(d['temp']), float(d['tempLo']), float(d['tempHi'])
+        isweek = int(d['isWeek'])
         opq = float(d['opq'])
         s24, s168 = float(d['snow24']), float(d['snow168'])
         n168 = num(d['newSnow168'])
     except Exception:
         continue
     days[nm][sy][dte] = (
-        A[tier],
+        # tier in the low two bits, the 5-inch week verdict in the third. The
+        # slot held 0..3 and the alphabet holds 92 values, so carrying SQL's
+        # own answer here costs nothing rather than a twentieth character.
+        A[tier | (isweek << 2)],
         A[max(TMIN, min(TMAX, r0(app))) - TMIN],            # exact degrees F
         A[r0(sun * 90)],                                    # 0..1
         A[r0(min(90.0, gust))],                             # mph, capped at 90

@@ -61,7 +61,10 @@ SELECT CONVERT(nvarchar(max), d.ResortName) + '|' +
        CONVERT(varchar(10), d.OpaquePct) + '|' +
        CONVERT(varchar(10), d.ModelSnow24In) + '|' +
        CONVERT(varchar(10), d.ModelSnow168In) + '|' +
-       ISNULL(CONVERT(varchar(10), d.SnotelNewSnow168In), '')
+       ISNULL(CONVERT(varchar(10), d.SnotelNewSnow168In), '') + '|' +
+       -- APPENDED: the week verdict, decided once in SQL. Both builds used to
+       -- re-derive it and the hosted one got it wrong on 98,896 days.
+       CONVERT(varchar(1), d.IsWeekSnow)
 FROM meteo.vSkiDaySnow d
 JOIN ref.Resort rr ON rr.ResortId = d.ResortId
 WHERE MONTH(d.ObsDate) IN (12,1,2,3,4)

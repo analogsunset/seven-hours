@@ -97,25 +97,57 @@ CREATE OR ALTER VIEW meteo.vSnotelStationDay
 AS
 WITH d AS
 (
+    /* MISSING IS NOT ZERO, and conflating the two was this layer's worst bug.
+       SnowDepthIn and SweIn are both nullable, and 429,415 of 3,536,299
+       station-days -- 12.1% -- have no depth reading. Written as
+
+           CASE WHEN SnowDepthIn - LAG(SnowDepthIn) > 0 THEN ... ELSE 0 END
+
+       a NULL on either side makes the comparison UNKNOWN, the CASE falls to
+       ELSE, and "we could not measure it" is recorded as "no snow fell". That
+       zero then flowed into the consensus and into the 2, 4 and 5 inch tests
+       the tiers run on.
+       Three states, kept apart: measured a gain -> the gain; measured no gain,
+       or settling and melt -> 0; could not measure -> NULL, so the caller
+       falls back to the model instead of believing a fabricated zero. */
     SELECT Triplet, ObsDate, SweIn, SnowDepthIn,
-           Step = CASE WHEN SweIn - LAG(SweIn) OVER (PARTITION BY Triplet ORDER BY ObsDate) > 0
+           Step = CASE WHEN SweIn IS NULL
+                         OR LAG(SweIn) OVER (PARTITION BY Triplet ORDER BY ObsDate) IS NULL
+                       THEN NULL
+                       WHEN SweIn - LAG(SweIn) OVER (PARTITION BY Triplet ORDER BY ObsDate) > 0
                        THEN SweIn - LAG(SweIn) OVER (PARTITION BY Triplet ORDER BY ObsDate)
                        ELSE 0 END,
            /* Depth gain is the intuitive "how many inches fell" number. It
               under-reads, because the pack settles between the daily readings
               while a resort clears its stake every few hours -- but it is a
               measured depth, not a 7:1 ratio applied to modelled water. */
-           DStep = CASE WHEN SnowDepthIn - LAG(SnowDepthIn) OVER (PARTITION BY Triplet ORDER BY ObsDate) > 0
+           DStep = CASE WHEN SnowDepthIn IS NULL
+                          OR LAG(SnowDepthIn) OVER (PARTITION BY Triplet ORDER BY ObsDate) IS NULL
+                        THEN NULL
+                        WHEN SnowDepthIn - LAG(SnowDepthIn) OVER (PARTITION BY Triplet ORDER BY ObsDate) > 0
                         THEN SnowDepthIn - LAG(SnowDepthIn) OVER (PARTITION BY Triplet ORDER BY ObsDate)
                         ELSE 0 END,
            PrevDate = LAG(ObsDate) OVER (PARTITION BY Triplet ORDER BY ObsDate)
     FROM meteo.SnotelStationDaily
 )
+/* The rolling sums require a COMPLETE window, for the same reason. SUM() skips
+   NULLs, so a three-day window holding one reading and two gaps would return
+   that one reading as a 72-hour total -- an under-count presented as a
+   measurement. COUNT() over the same frame says how many of the three are real;
+   anything short of all three yields NULL and the caller uses the model. */
 SELECT Triplet, ObsDate, SweIn, SnowDepthIn,
-       Swe72In = SUM(CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN Step END)
-                 OVER (PARTITION BY Triplet ORDER BY ObsDate ROWS BETWEEN 2 PRECEDING AND CURRENT ROW),
-       NewSnow72In = SUM(CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN DStep END)
-                 OVER (PARTITION BY Triplet ORDER BY ObsDate ROWS BETWEEN 2 PRECEDING AND CURRENT ROW),
+       Swe72In = CASE WHEN COUNT(CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN Step END)
+                           OVER (PARTITION BY Triplet ORDER BY ObsDate
+                                 ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) = 3
+                      THEN SUM(CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN Step END)
+                           OVER (PARTITION BY Triplet ORDER BY ObsDate
+                                 ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) END,
+       NewSnow72In = CASE WHEN COUNT(CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN DStep END)
+                               OVER (PARTITION BY Triplet ORDER BY ObsDate
+                                     ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) = 3
+                          THEN SUM(CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN DStep END)
+                               OVER (PARTITION BY Triplet ORDER BY ObsDate
+                                     ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) END,
        NewSnow24In = CASE WHEN DATEDIFF(day, PrevDate, ObsDate) = 1 THEN DStep END
 FROM d;
 GO

@@ -57,7 +57,7 @@ NRCS SNOTEL (daily)       ──h19_snotel_all───────────�
                     19 packed chars/day                 index + per-resort JSON
                           h15_build.py                        h15_web.py
                     seven_hours.html                          web/
-                   one self-contained file            587 KB first paint, 431 resorts
+                   one self-contained file            671 KB first paint, 431 resorts
 ```
 
 Two build targets from one model. The single file exists because a published
@@ -73,9 +73,11 @@ python run_pipeline.py --web          # the hosted build, all 431 resorts
 ```
 
 Every build ends in a verifier that decodes the shipped payload and compares
-**every value** back to the SQL it came from — 11.9 million comparisons for the
+**every value** back to the SQL it came from — 12.6 million comparisons for the
 artifact, 33.4 million for the hosted build. It exists because the encoding's
-positional coupling has silently broken twice.
+positional coupling has silently broken twice, and because a verifier that
+re-derives a value the way the builder did can only catch transcription faults:
+both now compare against the database's own answer.
 
 ## Running it yourself
 

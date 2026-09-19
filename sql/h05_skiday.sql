@@ -117,7 +117,15 @@ CREATE TABLE meteo.SkiDay
        gauges rather than the gauges to themselves. */
     IsFreshModel int NOT NULL, IsFreshMeasured int NULL,
     FreshSource varchar(8) NOT NULL,
-    IsFresh int NOT NULL, IsGood int NOT NULL, IsGreat int NOT NULL,
+    IsFresh int NOT NULL,
+    /* Did the 5-inch week clear -- measured where a gauge reported, modelled
+       otherwise. STORED rather than left implicit because both page builds used
+       to re-derive it in their own language, and the hosted one got it wrong:
+       it read modelled snow only, so a gauged resort's card disagreed with its
+       own tiers on 98,896 days. Worse, the verifier re-derived it the same
+       wrong way and passed. SQL decides; everything downstream serialises. */
+    IsWeekSnow int NOT NULL,
+    IsGood int NOT NULL, IsGreat int NOT NULL,
     /* Epic is Great's second path with 4 inches in place of 2, so it nests
        inside Great by construction rather than by luck.
        Every snow test in the model is now an ABSOLUTE depth, because that is
@@ -274,9 +282,23 @@ DROP TABLE IF EXISTS #Meas;
 SELECT c.ResortId, c.ObsDate, c.Composite, c.BaseFt, c.Swe72In,
        Me24  = CONVERT(float, c.NewSnow24In),
        Me72  = CONVERT(float, c.NewSnow72In),
-       Me168 = SUM(CONVERT(float, c.NewSnow24In))
-                 OVER (PARTITION BY c.ResortId ORDER BY c.ObsDate
-                       ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+       /* Seven COMPLETE CONSECUTIVE days or nothing. SUM() skips NULLs, and
+          ROWS counts rows rather than dates, so the obvious version returns a
+          three-day total as a week whenever the consensus has gaps -- an
+          under-count wearing a measurement's label, which then fails the 5-inch
+          test instead of deferring to the model. COUNT() says how many of the
+          seven are real; DATEDIFF against the frame's first date says whether
+          they are consecutive. */
+       Me168 = CASE
+           WHEN COUNT(c.NewSnow24In) OVER (PARTITION BY c.ResortId ORDER BY c.ObsDate
+                                           ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) = 7
+            AND DATEDIFF(day, MIN(c.ObsDate) OVER (PARTITION BY c.ResortId ORDER BY c.ObsDate
+                                           ROWS BETWEEN 6 PRECEDING AND CURRENT ROW),
+                         c.ObsDate) = 6
+           THEN SUM(CONVERT(float, c.NewSnow24In))
+                OVER (PARTITION BY c.ResortId ORDER BY c.ObsDate
+                      ROWS BETWEEN 6 PRECEDING AND CURRENT ROW)
+           END
 INTO #Meas
 FROM meteo.SnotelConsensus c;
 CREATE CLUSTERED INDEX CIX_Meas ON #Meas (ResortId, ObsDate);
@@ -288,9 +310,14 @@ CREATE CLUSTERED INDEX CIX_Meas ON #Meas (ResortId, ObsDate);
    is exactly why a flat model-inch threshold cannot work. */
 DECLARE @SnowBias TABLE (ResortId int PRIMARY KEY, R24 float, R168 float);
 INSERT @SnowBias (ResortId, R24, R168)
+/* Numerator and denominator over the SAME days. SUM() drops NULLs on each side
+   independently, so a day the model saw but the gauge did not would add to the
+   modelled total and nothing to the measured one -- inflating every ratio, and
+   with it the model-inch thresholds the ungauged resorts are judged against.
+   Matters far more now that a missing reading is honestly NULL. */
 SELECT w.ResortId,
-       SUM(w.M24)  / NULLIF(SUM(m.Me24),  0),
-       SUM(w.M168) / NULLIF(SUM(m.Me168), 0)
+       SUM(CASE WHEN m.Me24  IS NOT NULL THEN w.M24  END) / NULLIF(SUM(m.Me24),  0),
+       SUM(CASE WHEN m.Me168 IS NOT NULL THEN w.M168 END) / NULLIF(SUM(m.Me168), 0)
 FROM #Win w
 JOIN #Meas m ON m.ResortId = w.ResortId
             AND m.ObsDate  = DATEADD(day, -1, w.ObsDate)
@@ -472,7 +499,7 @@ INSERT meteo.SkiDay
      MeanTempF, MinTempF, MaxTempF, MeanApparentF, MinApparentF, MaxApparentF, WindChillGapF,
      SunFraction, OpaquePct, FlatLightHours, BluebirdHours,
      MaxGustMph, MeanGustMph, WindHoldHours,
-     IsCovered, IsFreshModel, IsFreshMeasured, FreshSource, IsFresh,
+     IsCovered, IsFreshModel, IsFreshMeasured, FreshSource, IsFresh, IsWeekSnow,
      SnotelSwe72In, SnotelNewSnow72In, SnotelNewSnow24In, SnotelNewSnow168In,
      SnotelBaseFt, BaseSource, IsGood, IsGreat, IsEpic, FailReason, FailMask)
     SELECT  t.ResortId,
@@ -513,8 +540,13 @@ INSERT meteo.SkiDay
             /* ---- snow provenance ----
                IsFresh* now mean "2 inches in 24 hours", the line Great's second
                path tests, rather than the retired 80th-percentile fresh line.
-               h20 scores IsFreshModel against the gauges, so the kappa printed
-               on the cards now answers the question the tiers actually ask.    */
+               CAVEAT, and the cards overstate this: h20 still scores
+               IsFreshModel against its OWN target -- the 80th percentile of a
+               72-hour SWE composite -- which is not the event this flag now
+               describes. So the kappa and recall printed on each card measure
+               "does ERA5 find the snowy stretches", not "does ERA5 agree about
+               a 2-inch morning". Retargeting h20 at NewSnow24In >= 2.0 would
+               make the figure mean what the card implies.                      */
             IsCovered = CASE WHEN t.MeasBaseFt IS NOT NULL
                             THEN CASE WHEN t.MeasBaseFt >= @MinRealBaseFt THEN 1 ELSE 0 END
                             ELSE CASE WHEN t.BaseDepthFt >= t.CoverCutFt
@@ -525,6 +557,7 @@ INSERT meteo.SkiDay
                                    WHEN t.Me24 >= @Snow24GreatIn THEN 1 ELSE 0 END,
             FreshSource = CASE WHEN t.Me24 IS NULL THEN 'modelled' ELSE 'measured' END,
             IsFresh     = t.S24_2,
+            IsWeekSnow  = t.S168_5,
             SnotelSwe72In      = CONVERT(decimal(7,2), t.Swe72In),
             SnotelNewSnow72In  = CONVERT(decimal(7,1), t.Me72),
             SnotelNewSnow24In  = CONVERT(decimal(7,1), t.Me24),

@@ -24,7 +24,7 @@ if (decode(' '.repeat(19), 0) !== null) throw new Error('decode() did not lift c
 const COLS = ['name','date','season','good','great','epic','covered','fresh','app','sun','gust',
   'hold','flat','snow72','base','reason','measRel','vis','appLo','appHi','newSnow72','swe72',
   'newSnow24','failMask','temp','tempLo','tempHi',
-  'opq','snow24','snow168','newSnow168'];
+  'opq','snow24','snow168','newSnow168','isWeek'];
 const FAILS = ['Great','Rain on snow','Wind hold','Flat light','Too cold','Too warm',
                'Cloudy and cold','No week snow','No fresh snow','Grey'];
 const VIS = ['Flat light','Cloudy','Mostly cloudy','Partly sunny',
@@ -58,6 +58,7 @@ for (const r of DATA){
       const app = clampApp(+q.app);
       const chk = [
         ['tier', d.tier, (+q.epic ? 3 : (+q.great ? 2 : (+q.good ? 1 : 0)))],
+        ['week', d.week, +q.isWeek],
         ['app',  d.app,  app],
         ['sun',  Math.round(d.sun * 90), Math.round(+q.sun * 90)],
         ['gust', d.gust, Math.round(Math.min(90, +q.gust))],

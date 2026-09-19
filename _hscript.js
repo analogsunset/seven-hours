@@ -48,8 +48,7 @@ function bitsAt(r, j, i){
   }
   const o = decode(r.s[j], i);
   if (!o) return -1;
-  const wk = o.meas === null ? o.snow : o.meas;
-  return o.tier | ((o.fail & 2) ? 4 : 0) | (wk >= 1 ? 8 : 0);
+  return o.tier | ((o.fail & 2) ? 4 : 0) | (o.week ? 8 : 0);
 }
 
 function dayAt(r, j, i){
@@ -195,8 +194,8 @@ const STAT_TIP = {
        + 'Comfortable temperatures, or 2 inches or more in the last 24 hours.',
   good:  'Good days per trip, averaged over every winter on record. Great and Epic days '
        + 'count toward it. Good = felt temperature 16-45F, no wind hold, terrain visible '
-       + 'over more than half the day, no rain on snow, and if the sky is Mostly Cloudy or '
-       + 'worse then either Comfortable temperatures or a 2-inch week behind it.'
+       + 'over more than half the day, no rain on snow, and if the sky is Mostly Cloudy '
+       + 'or Cloudy then Comfortable or Warm as well. Good asks nothing about snow.'
 };
 // Spelled out with the real day counts for the current settings, because
 // "scaled to the trip" is the sort of sentence that sounds fine and tells you
@@ -327,7 +326,7 @@ const WHY = [
   ['Flat light',      'cloud hid the terrain over half the day'],
   ['Too cold',        'under 16\u00b0F felt'],
   ['Too warm',        'over 45\u00b0F felt'],
-  ['Cloudy and cold', 'chilly under heavy cloud, with no snow behind it'],
+  ['Cloudy and cold', 'chilly under heavy cloud'],
   ['No week snow',    'under 5 inches in the last week'],
   ['No fresh snow',   'the week was there, the morning was not'],
   ['Grey',            'snow and cold enough, but too much cloud']
@@ -367,13 +366,15 @@ function decode(s, i){
   // inches: modelled snowfall runs anywhere from a third to half again the
   // measured depth gain depending on the resort, so only a per-resort scale
   // compares. Both Great paths need it at 1.0 or over.
-  // `meas` is the same week from the SNOTEL gauges within 35 km, as a multiple
+  // `meas` is the same week from the SNOTEL gauges within 35 km -- 60 km where
+  // fewer than three are that close -- as a multiple
   // of a flat 5 inches; null where there are no gauges.
   // Exact degrees F. The mean is offset by 33 (window -33..58); the low and
   // high ride as offsets from it, which is what keeps warm April highs from
   // hitting the top of the alphabet.
   const app = CODE[c[1]] - 33;
-  return { tier: CODE[c[0]], app: app,
+  // slot 0 carries the tier in bits 0-1 and the 5-inch week verdict in bit 2
+  return { tier: CODE[c[0]] & 3, week: (CODE[c[0]] >> 2) & 1, app: app,
            sun: CODE[c[2]] / 90, gust: CODE[c[3]], snow: CODE[c[4]] / 30,
            meas: c[5] === ' ' ? null : CODE[c[5]] / 30, why: CODE[c[6]],
            vis: CODE[c[7]], lo: app - CODE[c[8]], hi: app + CODE[c[9]],
@@ -562,10 +563,10 @@ function card(r, rank){
           '% of the days the gauges called fresh.">&#10003; SNOTEL &middot; ' +
           r.gauges + (r.gauges === 1 ? ' gauge' : ' gauges') + '</span>'
         : '<span class="noprov" title="No SNOTEL station stands within 35 km of this ' +
-          'mountain, so its snow is ERA5 reanalysis rather than a gauge reading. Fresh ' +
-          'days are judged on modelled inches scaled to its own record, which still ranks ' +
-          'its winters correctly -- but Epic needs a measured 24-hour depth, so a day ' +
-          'here can be Great and never Epic.">no gauge in range &middot; snow modelled</span>') +
+          'mountain (60 km where fewer than three are that close), so its snow is ERA5 ' +
+          'reanalysis rather than a gauge reading. Every snow test falls back to modelled ' +
+          'inches converted to this resort\'s own scale, so it can still reach Epic -- it ' +
+          'is just judged by the model rather than a gauge.">no gauge in range &middot; snow modelled</span>') +
     '</div>';
 
   function STATS_HTML(r){
@@ -857,7 +858,21 @@ function render(){
     });
   }, { rootMargin: '1200px' });   // ~3 cards of lead time; a detail file is
                                   // 36 KB, so buying the head start is cheap
-  grids.querySelectorAll('.card').forEach(c => render.io.observe(c));
+  const cards = grids.querySelectorAll('.card');
+  cards.forEach(c => render.io.observe(c));
+  /* The observer is the whole rendering path, which makes it a single point of
+     failure: where IntersectionObserver does not fire -- an emulated or
+     zero-height viewport, a headless capture, a browser that disagrees about
+     what counts as visible -- every card would show its stats above an empty
+     grid, with nothing to recover it. So the first screenful is drawn outright.
+     Twelve cards is ~4,900 cells against the 174,555 that made an eager render
+     take 13.7 seconds, so it costs nothing and guarantees the page is never
+     blank where someone is actually looking. */
+  for (let i = 0; i < Math.min(12, cards.length); i++){
+    const plot = cards[i].querySelector('.plot');
+    if (plot && cards[i]._r) buildPlot(plot, cards[i]._r);
+    if (cards[i]._r) needDetail(cards[i]._r);
+  }
 
   /* The identity line must not wrap, so on a card too narrow to hold it the
      row scrolls instead. Scrolled content with a hidden scrollbar just looks

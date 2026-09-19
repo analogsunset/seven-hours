@@ -47,7 +47,7 @@ DAY_COLS = ['name', 'date', 'season', 'good', 'great', 'epic', 'covered', 'fresh
             'app', 'sun', 'gust', 'hold', 'flat', 'snow72', 'base', 'reason',
             'measRel', 'vis', 'appLo', 'appHi', 'newSnow72', 'swe72', 'newSnow24',
             'failMask', 'temp', 'tempLo', 'tempHi',
-            'opq', 'snow24', 'snow168', 'newSnow168']
+            'opq', 'snow24', 'snow168', 'newSnow168', 'isWeek']
 
 # the detail file's columns, in order. tier/held/week live in the index; `sun`
 # is no longer displayed anywhere and `vis` is derivable from opq plus the
@@ -124,6 +124,7 @@ for line in io.open('_skidays_all.txt', encoding='utf-8'):
             gust=r0(min(90.0, float(d['gust']))),
             reason=FAIL_IX.get(d['reason'], 0),
             fail=int(d['failMask']),
+            isWeek=int(d['isWeek']),
             wkModel=r0(min(3.0, float(d['snow168']) / wk if wk else 0) * 30),
             wkMeas=(r0(min(3.0, n168 / 5.0) * 30) if n168 is not None else None),
             d24Model=r0(min(3.0, float(d['snow24']) / c24 if c24 else 0) * 30),
@@ -157,7 +158,11 @@ for c in cards:
                     cols[k].append(None)
             else:
                 held = 1 if (rec['fail'] & 2) else 0
-                week = 1 if rec['wkModel'] >= 30 else 0
+                # SQL's answer, not a re-derivation. This line used to read
+                # rec['wkModel'] >= 30 -- modelled snow only -- so a gauged
+                # resort's card disagreed with its own tiers on 98,896 days,
+                # and _wverify.js re-derived it the same way and passed.
+                week = rec['isWeek']
                 s.append(IDX[rec['tier'] | (held << 2) | (week << 3)])
                 fc[rec['reason']] += 1
                 for k in DETAIL:

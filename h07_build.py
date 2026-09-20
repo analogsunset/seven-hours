@@ -31,7 +31,7 @@ Values are the SAME quantised integers h07_pack.py ships, just written as JSON
 rather than alphabet offsets, so the two builds render identical numbers and the
 verification can compare them directly.
 """
-import io, json, math, os, re, gzip, collections
+import io, json, math, os, re, gzip, collections, hashlib
 
 OUT = 'web'
 r0 = lambda x: int(math.floor(x + 0.5)) if x >= 0 else -int(math.floor(-x + 0.5))
@@ -149,6 +149,14 @@ import datetime
 
 os.makedirs(os.path.join(OUT, 'day'), exist_ok=True)
 index, detail_sizes = [], []
+# A fingerprint of everything in day/, so the page can version those URLs.
+# It has to be taken over the DETAIL payloads and not over index.json: the
+# fields that live only in a detail file -- miss, the snow windows -- can
+# change while every index character stays identical, which is exactly what
+# happened on 2026-09-20 when MissMask was redefined. A script fingerprint
+# does not cover it either, since a data-only rebuild leaves the script byte
+# for byte the same.
+detail_hash = hashlib.sha1()
 
 for c in cards:
     nm = c['name']
@@ -181,6 +189,8 @@ for c in cards:
         fails.append(fc)
 
     det = json.dumps([cols[k] for k in DETAIL], separators=(',', ':'))
+    detail_hash.update(c['slug'].encode('utf-8'))
+    detail_hash.update(det.encode('utf-8'))
     path = os.path.join(OUT, 'day', c['slug'] + '.json')
     io.open(path, 'w', encoding='utf-8').write(det)
     detail_sizes.append(len(gzip.compress(det.encode('utf-8'), 9)))
@@ -211,7 +221,9 @@ for r in index:
     per_season.append(epic / float(n))
 meta.update(epicMin=round(min(per_season), 1), epicMax=round(max(per_season), 1),
             measured=sum(1 for r in index if r['snowSource'] == 'measured'),
-            fails=FAILS, detail=DETAIL)
+            fails=FAILS, detail=DETAIL,
+            # the page appends this to every day/*.json URL
+            build=detail_hash.hexdigest()[:10])
 
 blob = json.dumps({'meta': meta, 'resorts': index}, separators=(',', ':'))
 io.open(os.path.join(OUT, 'index.json'), 'w', encoding='utf-8').write(blob)

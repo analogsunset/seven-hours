@@ -90,7 +90,15 @@ const PENDING = new Set();
 function needDetail(r){
   if (!WEB || DETAIL.has(r.slug) || PENDING.has(r.slug)) return;
   PENDING.add(r.slug);
-  fetch('day/' + r.slug + '.json')
+  // Versioned by a fingerprint of every detail payload, carried in
+  // index.json, which is itself fetched with cache: 'no-cache' and so is
+  // always current. Without it these 431 URLs never change between builds
+  // and a browser holds them for the full max-age: after the 2026-09-20
+  // deploy the page served the new script against ten-minute-old detail
+  // files, so a day SQL said was one morning short of Epic decoded as
+  // missing nothing. The script's own fingerprint cannot cover this --
+  // a data-only rebuild leaves the script identical.
+  fetch('day/' + r.slug + '.json' + (META && META.build ? '?v=' + META.build : ''))
     .then(x => x.ok ? x.json() : Promise.reject(x.status))
     .then(function(d){
       DETAIL.set(r.slug, d);

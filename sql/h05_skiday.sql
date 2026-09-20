@@ -176,12 +176,11 @@ CREATE TABLE meteo.SkiDay
          1  no 5-inch week            (a Good day)
          2  nothing fresh, and not sunny and comfortable enough without it
                                       (a Good day)
-         4  under 4 inches this morning   (a Great day)
-       Bits 1 and 2 are set only on Good days, bit 4 only on Great days, so the
-       page can render the right row from the tier alone. Epic sets nothing.
-       Bit 4 needs no test of its own: under these tiers a Great day already
-       holds the week and Good's sky clause, so the morning is the only thing
-       between it and Epic.                                                     */
+         4  under 4 inches this morning   (ANY non-Epic day that cleared every
+                                          other Epic test -- Meh days included)
+       Bits 1 and 2 are set only on Good days. Bit 4 is set at whatever tier
+       the day landed in, because Epic no longer sits at the top of a ladder:
+       a Meh day can be one morning short of it. Epic itself sets nothing.    */
     MissMask int NOT NULL,
     CONSTRAINT PK_SkiDay PRIMARY KEY CLUSTERED (ResortId, ObsDate),
     CONSTRAINT FK_SkiDay_Resort FOREIGN KEY (ResortId) REFERENCES ref.Resort (ResortId)
@@ -724,7 +723,25 @@ INSERT meteo.SkiDay
                 + CASE WHEN t.Good = 1 AND t.Great = 0
                         AND NOT ((t.App >= @ComfortMinF AND t.OpaquePct <= @MostlySunnyPct)
                                  OR t.S24_2 = 1 OR t.S72_5 = 1) THEN 2 ELSE 0 END
-                + CASE WHEN t.Great = 1 AND t.Epic = 0 THEN 4 ELSE 0 END
+                /* Bit 4 is 'everything EPIC asks for except the morning',
+                   not 'a Great day that fell short'. It read the latter until
+                   2026-09-20, which was the ladder assumption surviving in a
+                   model that no longer has one: Epic is reachable straight
+                   from Meh, so a Meh day can be one test from the top and say
+                   nothing. 56,131 days were exactly that -- safe, warm
+                   enough, clear enough, a 5-inch week behind them, short only
+                   of 4 inches that morning. Whistler on 2018-02-24 is the
+                   case: Bluebird at 2% cloud, an 8-inch week, 2 inches fresh,
+                   and the only thing the page said was 'too cold'.
+                   A strict SUPERSET of the old condition -- a Great day
+                   clears 16F and so carries the floor and the sky clause
+                   automatically -- so no day loses the row it had. */
+                + CASE WHEN t.Epic = 0 AND t.S24_4 = 0
+                        AND t.Safe = 1
+                        AND t.App >= @EpicMinF AND t.App <= @MaxApparentF
+                        AND (t.App >= @MinApparentF OR t.OpaquePct <= @MostlyCloudPct)
+                        AND t.S168_5 = 1
+                   THEN 4 ELSE 0 END
     FROM Tiers t
 ;
 END

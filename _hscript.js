@@ -363,9 +363,10 @@ const failList = m => FAILBITS.filter(b => m & b[0]).map(b => b[1]).join(', ');
 // The same idea one tier up. FAILBITS says why a day is Meh; these say what a
 // day that CLEARED its tier fell short of on the next one -- which the tooltip
 // had no way to express, so a Good day sitting under a 4-inch morning looked
-// arbitrary. Bits 1 and 2 are set only on Good days and bit 4 only on Great
-// ones, so the list never needs masking by tier. SQL sets them in MissMask;
-// nothing here re-derives a rule the page does not own.
+// arbitrary. Bits 1 and 2 are set only on Good days; bit 4 is set at whatever
+// tier the day landed in, so the two rows are masked apart where they are
+// rendered. SQL sets them in MissMask; nothing here re-derives a rule the
+// page does not own.
 const MISSBITS = [[1, 'under 5&Prime; in the last week'],
                   [2, 'nothing fresh, and not sunny and comfortable enough without it'],
                   [4, 'under 4&Prime; this morning']];
@@ -1031,9 +1032,16 @@ function tipHtml(a){
     // clause appended to the label.
     row('Day type', tier) +
     (o.tier === 0 && o.fail ? row('Failed on', failList(o.fail)) : '') +
-    // and, one tier up, what a day that cleared its tier fell short of
-    (o.tier === 1 && o.miss ? row('Missed Great on', missList(o.miss)) : '') +
-    (o.tier === 2 && o.miss ? row('Missed Epic on',  missList(o.miss)) : '') +
+    // and what the day fell short of on the tier above.
+    // The EPIC row is NOT gated on tier, because Epic is not the top of a
+    // ladder: a Meh day can clear everything Epic asks for except the morning
+    // -- 56,131 of them do -- and until 2026-09-20 the page said only why they
+    // were Meh. Whistler on 2018-02-24 read 'too cold' under a 2% sky with an
+    // 8-inch week and 2 inches fresh, two inches short of the top tier.
+    // It IS suppressed on Good days, where 'Missed Great on' already names the
+    // snow and a second row would only restate it.
+    (o.tier === 1 && (o.miss & 3) ? row('Missed Great on', missList(o.miss & 3)) : '') +
+    (o.tier !== 1 && (o.miss & 4) ? row('Missed Epic on',  missList(o.miss & 4)) : '') +
     row('Feels', tband(o.app) + ', ' + o.app + '&deg;F (' +
                  o.lo + '&ndash;' + o.hi + '&deg;F)') +
     // The same reading off the air thermometer. The bands are the felt ones,

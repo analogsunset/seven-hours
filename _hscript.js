@@ -1073,26 +1073,53 @@ function tipHtml(a){
    there, however long ago the fetch finished. needDetail() repaints through it. */
 let tipCell = null;
 
+/* Where the pointer last was, in client coordinates. The tip is anchored to
+   the POINT rather than to the cell: cells are a few pixels wide, so centring
+   on one put the tip somewhere the finger was not, and on a phone the finger
+   is covering the cell anyway. Kept in a variable because paintTip is also
+   called with no event behind it -- needDetail repaints through it when a
+   detail file lands under a tip that is already showing. */
+let tipPt = null;
+
+/* The VISUAL viewport, which is what the reader can actually see. Page zoom
+   changes CSS pixel sizes and everything here scales with it, but a PINCH zoom
+   does not: it leaves the layout viewport alone and shows a window onto it, so
+   window.innerWidth/innerHeight still describe the whole page while the reader
+   is looking at a fraction of it. position:fixed anchors to the layout
+   viewport too, so clamping to innerWidth/innerHeight would happily place the
+   tip somewhere off the side of a zoomed-in screen. offsetLeft/offsetTop give
+   where the visible window sits, and width/height how big it is -- both in CSS
+   pixels, the same units as getBoundingClientRect and clientX, so the three
+   compare directly. */
+function seen(){
+  const v = window.visualViewport;
+  return v ? { x: v.offsetLeft, y: v.offsetTop, w: v.width, h: v.height }
+           : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+}
+
 function paintTip(t){
   const html = tipHtml(t._at);
   if (!html){ tip.classList.remove('on'); return; }
   tip.innerHTML = html; tip.classList.add('on');
   const r = t.getBoundingClientRect();
-  const w = tip.offsetWidth;
-  const h = tip.offsetHeight;
-  let x = r.left + r.width / 2 - w / 2, y = r.top - h - 9;
-  x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
-  // above the cell by preference, below it when there is no room -- and then
-  // clamped to the viewport, because neither placement is guaranteed to fit.
-  // A phone in landscape is barely taller than a ten-row tip.
-  if (y < 8) y = r.bottom + 9;
-  y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
+  const w = tip.offsetWidth, h = tip.offsetHeight, v = seen();
+  // the anchor: the pointer if there was one, else the top-centre of the cell
+  const ax = tipPt ? tipPt.x : r.left + r.width / 2;
+  const ay = tipPt ? tipPt.y : r.top;
+  let x = ax - w / 2;
+  // 14px of clearance so a fingertip does not sit on top of the first row
+  let y = ay - h - 14;
+  // below the point when there is no room above it
+  if (y < v.y + 8) y = ay + 20;
+  x = Math.max(v.x + 8, Math.min(x, v.x + v.w - w - 8));
+  y = Math.max(v.y + 8, Math.min(y, v.y + v.h - h - 8));
   tip.style.left = x + 'px'; tip.style.top = y + 'px';
 }
 
 function showTip(e){
   const t = e.target.closest ? e.target.closest('.cell') : null;
   if (!t || !t._at){ tipCell = null; tip.classList.remove('on'); return; }
+  tipPt = { x: e.clientX, y: e.clientY };
   tipCell = t;
   paintTip(t);
 }
@@ -1111,6 +1138,16 @@ grids.addEventListener('pointerover', function(e){
   if (e.pointerType === 'touch') return;   // the tap handler owns this
   showTip(e);
 });
+// A cell is only a few pixels wide, but the pointer can still travel across
+// one, and an anchored tip that does not follow looks stuck.
+grids.addEventListener('pointermove', function(e){
+  if (e.pointerType === 'touch' || tipPinned || !tipCell) return;
+  if (!tip.classList.contains('on')) return;
+  const t = e.target.closest ? e.target.closest('.cell') : null;
+  if (t !== tipCell) return;
+  tipPt = { x: e.clientX, y: e.clientY };
+  paintTip(tipCell);
+});
 grids.addEventListener('pointerout', function(e){
   if (e.pointerType === 'touch' || tipPinned) return;
   tip.classList.remove('on');
@@ -1121,6 +1158,7 @@ grids.addEventListener('click', function(e){
   const t = e.target.closest ? e.target.closest('.cell') : null;
   if (!t || !t._at) return;
   tipPinned = true;
+  tipPt = { x: e.clientX, y: e.clientY };
   tipCell = t;
   paintTip(t);
 });
@@ -1128,6 +1166,12 @@ document.addEventListener('click', function(e){
   if (tipPinned && !(e.target.closest && e.target.closest('.cell'))) hideTip();
 });
 window.addEventListener('scroll', function(){ if (tipPinned) hideTip(); }, { passive: true });
+// Pinch-zooming or panning a zoomed page moves what is visible WITHOUT firing
+// a window scroll, and a fixed tip would sit wherever it was left.
+if (window.visualViewport){
+  window.visualViewport.addEventListener('scroll', function(){ if (tipPinned) hideTip(); });
+  window.visualViewport.addEventListener('resize', function(){ if (tipPinned) hideTip(); });
+}
 
 failPanel();
 render();

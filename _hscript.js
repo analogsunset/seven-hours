@@ -375,9 +375,12 @@ const failList = m => FAILBITS.filter(b => m & b[0]).map(b => b[1]).join(', ');
 // tier the day landed in, so the two rows are masked apart where they are
 // rendered. SQL sets them in MissMask; nothing here re-derives a rule the
 // page does not own.
-const MISSBITS = [[1, 'under 5&Prime; in the last week'],
-                  [2, 'nothing fresh, and not sunny and comfortable enough without it'],
-                  [4, 'under 4&Prime; this morning']];
+// Terse on purpose: these sit beside 'Failed on' in a tip that has to wrap
+// inside a phone screen, and the rows underneath already give the numbers.
+// Each one names the window the reader can then go and read.
+const MISSBITS = [[1, 'no 5&Prime; week'],
+                  [2, 'no fresh snow, no sun'],
+                  [4, 'under 4&Prime; in 24h']];
 const missList = m => MISSBITS.filter(b => m & b[0]).map(b => b[1]).join(', ');
 
 // How the felt temperature reads. The model's floor is the bottom of Chilly:
@@ -1076,9 +1079,14 @@ function paintTip(t){
   tip.innerHTML = html; tip.classList.add('on');
   const r = t.getBoundingClientRect();
   const w = tip.offsetWidth;
-  let x = r.left + r.width / 2 - w / 2, y = r.top - tip.offsetHeight - 9;
+  const h = tip.offsetHeight;
+  let x = r.left + r.width / 2 - w / 2, y = r.top - h - 9;
   x = Math.max(8, Math.min(x, window.innerWidth - w - 8));
+  // above the cell by preference, below it when there is no room -- and then
+  // clamped to the viewport, because neither placement is guaranteed to fit.
+  // A phone in landscape is barely taller than a ten-row tip.
   if (y < 8) y = r.bottom + 9;
+  y = Math.max(8, Math.min(y, window.innerHeight - h - 8));
   tip.style.left = x + 'px'; tip.style.top = y + 'px';
 }
 
@@ -1088,8 +1096,38 @@ function showTip(e){
   tipCell = t;
   paintTip(t);
 }
-grids.addEventListener('pointerover', showTip);
-grids.addEventListener('pointerout', () => tip.classList.remove('on'));
+/* A TOUCH SCREEN HAS NO HOVER, and this was a hover-only tooltip. The event
+   sequence a tap produces is pointerdown, pointerover, pointerup, pointerout
+   -- so the tip appeared and was dismissed again the instant the finger
+   lifted, which on a phone reads as a flicker rather than a tooltip.
+   So: mice keep hovering, and a tap PINS the tip until the next tap lands
+   somewhere that is not a cell. Scrolling dismisses it too, because the tip
+   is position:fixed and would otherwise hang in the air while the grid it
+   describes slides away underneath. */
+let tipPinned = false;
+function hideTip(){ tipPinned = false; tipCell = null; tip.classList.remove('on'); }
+
+grids.addEventListener('pointerover', function(e){
+  if (e.pointerType === 'touch') return;   // the tap handler owns this
+  showTip(e);
+});
+grids.addEventListener('pointerout', function(e){
+  if (e.pointerType === 'touch' || tipPinned) return;
+  tip.classList.remove('on');
+});
+// click fires after a tap on every touch browser, and harmlessly on a mouse
+// where the tip is already up from hovering.
+grids.addEventListener('click', function(e){
+  const t = e.target.closest ? e.target.closest('.cell') : null;
+  if (!t || !t._at) return;
+  tipPinned = true;
+  tipCell = t;
+  paintTip(t);
+});
+document.addEventListener('click', function(e){
+  if (tipPinned && !(e.target.closest && e.target.closest('.cell'))) hideTip();
+});
+window.addEventListener('scroll', function(){ if (tipPinned) hideTip(); }, { passive: true });
 
 failPanel();
 render();

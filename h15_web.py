@@ -20,6 +20,16 @@ shell = io.open(SRC, encoding='utf-8').read()
 script = io.open('_hscript.js', encoding='utf-8').read().rstrip('\n')
 digest = hashlib.sha1(script.encode('utf-8')).hexdigest()[:10]
 
+# The build stamp h07_build.py put in index.json. The page already appends it
+# to every day/*.json URL; index.json needs it too, and can only get it from
+# here -- it is the file that carries the stamp, so it cannot version itself.
+# cache: 'no-cache' is NOT enough alone: it forces revalidation, but the
+# revalidation is answered by the CDN edge from its own copy while its
+# max-age holds. That is how the 2026-09-20 deploy served a current app.js
+# against a ten-minute-old index.json -- the script was new and the grid it
+# read was one tier behind.
+stamp = json.load(io.open(os.path.join(OUT, 'index.json'), encoding='utf-8'))['meta']['build']
+
 # The artifact ships one file, so a stale cache is impossible. Hosted, the data
 # and the code change on every rebuild while the URL does not, so the script is
 # fingerprinted and the index carries a no-cache hint of its own.
@@ -30,7 +40,7 @@ boot = """<script>
     if (g) g.innerHTML = '<div class="empty">Could not load the mountain data &mdash; '
                        + msg + '</div>';
   };
-  fetch('index.json', { cache: 'no-cache' })
+  fetch('index.json?v=__STAMP__', { cache: 'no-cache' })
     .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(j){
       window.DATA = j.resorts;
@@ -45,7 +55,7 @@ boot = """<script>
 })();
 </script>
 </body>
-""".replace('__HASH__', digest)
+""".replace('__HASH__', digest).replace('__STAMP__', stamp)
 
 os.makedirs(OUT, exist_ok=True)
 

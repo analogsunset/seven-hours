@@ -21,9 +21,10 @@ version:
 | **Wind** | gusts ≥40 mph over more than half the lift day |
 | **Snow** | absolute inches across three windows (24 h, 72 h, a week), measured by SNOTEL wherever a gauge reaches and modelled otherwise |
 
-**Good** is a rideable day. **Great** is a Good day with a 5-inch week behind it
-and then either sun and comfort, 2 inches that morning, or 5 over three days — it
-nests inside Good structurally, its conditions being a literal superset.
+**Good** is a rideable day. **Great** wants a 5-inch week behind it and then
+either sun and comfort, 2 inches that morning, or 5 over three days — and on the
+2-inch path it reaches down to 8 °F, below Good's own floor, so a Great day is
+not always a Good one.
 
 **Epic is not a rung on that ladder.** It is a rideable powder day: safe, 8 °F or
 better, a 5-inch week, 4 inches that morning, and Partly Sunny or better if it is

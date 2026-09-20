@@ -411,11 +411,13 @@ BASE  = App 16..45  AND NOT flat light
 
 GOOD  = BASE AND (OpaquePct <= 62.5 OR App >= 20)
 
-GREAT = GOOD AND Snow168 >= 5" AND (
-          (App >= 20 AND OpaquePct <= 37.5)   -- nothing fresh: sun and comfort carry it
-       OR Snow24 >= 2"                        -- or 2 inches this morning
-       OR Snow72 >= 5"                        -- or 5 over three days
+GREAT = SAFE AND Snow168 >= 5" AND (
+          (App 20..45 AND OpaquePct <= 37.5)                  -- nothing fresh
+       OR (App  8..45 AND CLOUDCLAUSE AND Snow24 >= 2")       -- 2 inches this morning
+       OR (App 16..45 AND CLOUDCLAUSE AND Snow72 >= 5")       -- 5 over three days
         )
+
+  where CLOUDCLAUSE = (OpaquePct <= 62.5 OR App >= 20), Good's own
 
 EPIC  = SAFE AND App 8..45                   -- NOT Good: its own floor
              AND (App >= 16 OR OpaquePct <= 62.5)   -- Very Cold needs Partly Sunny+
@@ -434,8 +436,15 @@ those it was discarding **a third of all 4-inch mornings** — 16.4 inches of
 gauge-measured snow at 18 °F at Heavenly on 2006-04-17 ranked *Good* — because
 Chilly is one degree short of Comfortable and 46% cloud is past Mostly Sunny.
 
-**Great nests inside Good structurally.** Great's conditions are a literal
-superset of Good's, so Great ⊆ Good cannot be violated by any input.
+**Nothing nests.** Great's 24-hour branch reaches to 8 °F where Good stops at
+16 °F, so **9,116 days are Great without being Good** — 4,584 of them already
+Epic, 4,532 presently Meh. The three flags are three separate verdicts; only the
+display orders them, as `epic ? 3 : great ? 2 : good ? 1 : 0`. Anything treating
+one as implying another is wrong.
+
+The 24-hour branch admits Very Cold and the 72-hour branch does not, which is
+**deliberate and asymmetric**: 9,865 Very Cold days clear 5 inches over 72 hours
+with no 2-inch morning and are rejected — more snow on the ground, lower tier.
 
 **Epic deliberately does not.** It is not the top rung of the ladder; it is a
 separate verdict about the snow, answering "was this a powder day you could
@@ -501,13 +510,17 @@ a column but gates nothing, because neither ERA5 nor SNOTEL can see snowmaking.
 
 ### FailReason and FailMask
 
-`FailReason` names the **first** thing wrong, in priority order: **epic** → rain
-on snow → wind hold → flat light → too cold → too warm → cloudy and cold → no
-week snow → no fresh snow → grey → `'Great'`.
+`FailReason` names the **first** thing wrong, in priority order: **epic or
+great** → rain on snow → wind hold → flat light → too cold → too warm → cloudy
+and cold → no week snow → no fresh snow → grey → `'Great'`.
 
-**Epic sits at the head of the chain**, and that one row carries both waivers the
-rules ask for (`Too Cold ... AND not EPIC`, `Cloudy and Cold ... AND not EPIC`):
-an Epic day is never labelled Meh. It maps to `'Great'`, this list's index-0
+**Epic and Great sit at the head of the chain**, and that one row carries both
+waivers the rules ask for (`Too Cold ... AND not EPIC`, `Cloudy and Cold ... AND
+not EPIC`): neither tier is ever labelled Meh. Great joined Epic there when its
+24-hour branch was allowed down to 8 °F — without it, 4,532 days the tiers call
+Great would carry `'Too cold'` and be counted as such in the failure panel. The
+rules except only EPIC, but `FailReason` answers *why is this day not Great*, so
+for a day that **is** Great the answer can only be nothing. It maps to `'Great'`, this list's index-0
 sentinel meaning *nothing went wrong* — not a claim the day was Great, which a
 Very Cold Epic day is not. Without the row such a day falls through every test
 and lands on `'Grey'`, which says "too much cloud" about days that are Bluebird

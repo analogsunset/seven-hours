@@ -45,7 +45,7 @@ Rain = No Rain on Snow
 
 OR
 
-Felt temperature = Chilly, Comfortable, or Warm 
+Felt temperature = Very Cold, Chilly, Comfortable, or Warm 
 Sky cover = Bluebird through Cloudy
 *If Cloudy or Mostly Cloudy, temperature must be Comfortable or Warm
 Flat Light = No Flat Light

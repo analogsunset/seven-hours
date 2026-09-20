@@ -535,8 +535,11 @@ WITH Lift AS
               4 inches this morning -- plus, if it is Very Cold, Partly Sunny
               or better
 
-       GOOD AND GREAT STILL NEST. Great's conditions are a literal superset of
-       Good's, so Great c Good cannot be violated by any input.
+       NOTHING NESTS ANY MORE. Great's 24-hour branch reaches to 8F where Good
+       stops at 16F, so a day can be Great without being Good -- 9,116 of them
+       are. Epic was already outside. The three flags are now three separate
+       verdicts and only the display orders them, as epic ? 3 : great ? 2 :
+       good ? 1 : 0. Anything that treats one as implying another is wrong.
 
        EPIC DELIBERATELY DOES NOT. It is not the top rung of the ladder any
        more; it is a separate verdict about the snow, and it answers a
@@ -563,12 +566,39 @@ WITH Lift AS
             Good = CASE WHEN f.Ride = 1
                          AND (f.OpaquePct <= @MostlyCloudPct OR f.App >= @ComfortMinF)
                     THEN 1 ELSE 0 END,
-            Great = CASE WHEN f.Ride = 1
-                          AND (f.OpaquePct <= @MostlyCloudPct OR f.App >= @ComfortMinF)
-                          AND f.S168_5 = 1
-                          AND ( (f.App >= @ComfortMinF AND f.OpaquePct <= @MostlySunnyPct)
-                             OR f.S24_2 = 1
-                             OR f.S72_5 = 1 )
+            /* Written as three explicit branches rather than one gate and a
+               choice of snow tests, because the branches no longer share a
+               temperature floor: the 24-hour one reaches down into Very Cold
+               and the other two do not. Collapsing them again would lose that.
+
+               BRANCH 2 IS WHY GREAT NO LONGER NESTS INSIDE GOOD. Good stops at
+               16F; this reaches 8F, so 9,116 of the 9,124 days it adds are
+               days Good rejects -- 4,584 of them already Epic, 4,532 of them
+               presently Meh. Whistler on 2018-02-24 is the case it was written
+               for: 10F felt under 2% cloud, a 5-inch week, and 1.46 modelled
+               inches against a 1.42-inch line.
+
+               ASYMMETRY, DELIBERATE: branch 3 keeps the 16F floor, so 9,865
+               Very Cold days that clear 5 inches over 72 hours but had no
+               2-inch morning are still rejected -- more snow on the ground,
+               lower tier. Left as specified. */
+            Great = CASE WHEN f.Safe = 1 AND f.S168_5 = 1
+                          AND (
+                               /* nothing fresh: sun and comfort carry the day */
+                               (f.App >= @ComfortMinF AND f.App <= @MaxApparentF
+                                AND f.OpaquePct <= @MostlySunnyPct)
+                               /* 2 inches this morning -- Very Cold admitted,
+                                  under Good's own cloud clause */
+                            OR (f.App >= @EpicMinF AND f.App <= @MaxApparentF
+                                AND (f.OpaquePct <= @MostlyCloudPct
+                                     OR f.App >= @ComfortMinF)
+                                AND f.S24_2 = 1)
+                               /* 5 inches over three days -- Chilly floor */
+                            OR (f.App >= @MinApparentF AND f.App <= @MaxApparentF
+                                AND (f.OpaquePct <= @MostlyCloudPct
+                                     OR f.App >= @ComfortMinF)
+                                AND f.S72_5 = 1)
+                              )
                      THEN 1 ELSE 0 END,
             Epic  = CASE WHEN f.Safe = 1
                           AND f.App >= @EpicMinF
@@ -668,9 +698,16 @@ INSERT meteo.SkiDay
                catches every one of them. The ordinal array in h07_pack.py,
                _hscript.js and both verifiers must keep the slot regardless. */
             FailReason = CASE
-                /* EPIC FIRST, and this one line carries both waivers the rules
-                   ask for: "Too Cold ... AND not EPIC" and "Cloudy and Cold ...
-                   AND not EPIC". An Epic day is never labelled Meh.
+                /* EPIC OR GREAT FIRST, and this one line carries both waivers
+                   the rules ask for: "Too Cold ... AND not EPIC" and "Cloudy
+                   and Cold ... AND not EPIC". Neither is ever labelled Meh.
+                   GREAT joined EPIC here on 2026-09-20, when its 24-hour
+                   branch was allowed down to 8F: without it, 4,532 days that
+                   the tiers call Great would carry FailReason 'Too cold' and
+                   be counted as such in the failure panel. The rules do not
+                   spell this out -- their MEH list only excepts EPIC -- but
+                   FailReason answers "why is this day not Great", so for a day
+                   that IS Great the answer can only be 'nothing'.
                    It is safe at the top of the chain because Epic requires
                    Safe = 1, so the three rows below it are already 0.
                    'Great' is this list's index-0 sentinel meaning NOTHING WENT
@@ -679,7 +716,7 @@ INSERT meteo.SkiDay
                    branch such a day falls through every row and lands on
                    'Grey', which says "too much cloud" about days that are
                    Bluebird as often as not. */
-                WHEN t.Epic  = 1                        THEN 'Great'
+                WHEN t.Epic = 1 OR t.Great = 1          THEN 'Great'
                 WHEN t.Wet   = 1                        THEN 'Rain on snow'
                 WHEN t.Blown = 1                        THEN 'Wind hold'
                 WHEN t.Flat  = 1                        THEN 'Flat light'

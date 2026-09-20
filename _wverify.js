@@ -19,7 +19,8 @@ const readline = require('readline');
 const DAY_COLS = ['name','date','season','good','great','epic','covered','fresh',
   'app','sun','gust','hold','flat','snow72','base','reason','measRel','vis',
   'appLo','appHi','newSnow72','swe72','newSnow24','failMask','temp','tempLo',
-  'tempHi','opq','snow24','snow168','newSnow168','isWeek'];
+  'tempHi','opq','snow24','snow168','newSnow168','isWeek','miss',
+  'eq24','eq72','eq168'];
 const C = {}; DAY_COLS.forEach((k, i) => { C[k] = i; });
 
 const idx = JSON.parse(fs.readFileSync(path.join('web', 'index.json'), 'utf8'));
@@ -60,10 +61,8 @@ function verifyResort(name, rows) {
 
       const v = IDXCH.indexOf(s[i]);
       const app = r0(+q[C.app]), tmp = +q[C.temp];
-      const wk = r.weekCut, c24 = r.cut24;
       const n168 = num(q[C.newSnow168]), n72 = num(q[C.newSnow72]),
             n24 = num(q[C.newSnow24]), swe = num(q[C.swe72]);
-      const wkModel = r0(Math.min(3, wk ? +q[C.snow168] / wk : 0) * 30);
 
       const chk = [
         ['tier',  v & 3, (+q[C.epic] ? 3 : (+q[C.great] ? 2 : (+q[C.good] ? 1 : 0)))],
@@ -82,9 +81,17 @@ function verifyResort(name, rows) {
         ['gust',     col.gust[p],     r0(Math.min(90, +q[C.gust]))],
         ['reason',   col.reason[p],   FAILS.indexOf(q[C.reason])],
         ['fail',     col.fail[p],     +q[C.failMask]],
-        ['wkModel',  col.wkModel[p],  wkModel],
-        ['wkMeas',   col.wkMeas[p],   n168 === null ? null : r0(Math.min(3, n168 / 5) * 30)],
-        ['d24Model', col.d24Model[p], r0(Math.min(3, c24 ? +q[C.snow24] / c24 : 0) * 30)],
+        ['miss',     col.miss[p],     +q[C.miss]],
+        // Modelled snow, converted by SQL to measured-equivalent inches.
+        // Checked against the EXPORT's own conversion, not against a ratio
+        // recomputed here from the cut -- the page must not own that scale
+        // and neither must this.
+        ['mEq168',   col.mEq168[p],   Math.min(91, r0(+q[C.eq168]))],
+        ['mEq72',    col.mEq72[p],    Math.min(91, r0(+q[C.eq72]))],
+        ['mEq24',    col.mEq24[p],    Math.min(91, r0(+q[C.eq24]))],
+        // whole inches now; see h07_build.py for what the old multiple of
+        // the 5-inch line did to the tooltip on 35,477 days.
+        ['wkMeas',   col.wkMeas[p],   n168 === null ? null : Math.min(91, r0(n168))],
         ['d24Meas',  col.d24Meas[p],  n24 === null ? null : Math.min(91, r0(n24))],
         ['d72Meas',  col.d72Meas[p],  n72 === null ? null : Math.min(91, r0(n72))],
         ['swe',      col.swe[p],      swe === null ? null : Math.min(91, r0(swe * 10))]
@@ -131,15 +138,26 @@ function verifyResort(name, rows) {
   // ---- parity with the artifact build, on the 154 resorts it covers --------
   // Counted from BOTH builds' own exports rather than against numbers typed in
   // here, which go stale the moment the model changes -- as they just did.
+  //
+  // BOTH SIDES COUNT THE TIER ORDINAL, not the three flags. This block used to
+  // read `if (+q[C.good]) tiers.good++`, comparing a count of IsGood against a
+  // count of tier >= 1 -- two different questions that gave the same answer only
+  // while the tiers nested. Under the 2026-09-19 rules they do not: Epic is a
+  // verdict about the snow rather than the top rung, and 7,291 Epic days sit
+  // outside Good. The two counts then differ by exactly that population (5,319
+  // of them within these 154 resorts) and this check failed on a difference that
+  // was never in the payload. The ordinal is the right thing to compare: it is
+  // what both builds ship, and what the page colours and counts cells by.
   const tiers = { good: 0, great: 0, epic: 0 };
   const subset = new Set();
   for (const line of fs.readFileSync('_skidays.txt', 'utf8').split('\n')) {
     const q = line.split('|');
     if (q.length !== DAY_COLS.length) continue;
     subset.add(q[0].trim());
-    if (+q[C.good])  tiers.good++;
-    if (+q[C.great]) tiers.great++;
-    if (+q[C.epic])  tiers.epic++;
+    const t = +q[C.epic] ? 3 : (+q[C.great] ? 2 : (+q[C.good] ? 1 : 0));
+    if (t >= 1) tiers.good++;
+    if (t >= 2) tiers.great++;
+    if (t >= 3) tiers.epic++;
   }
   let g = 0, gr = 0, ep = 0;
   for (const r of idx.resorts) {
@@ -153,9 +171,9 @@ function verifyResort(name, rows) {
     }
   }
   console.log('\nparity with the artifact build over its ' + subset.size + ' resorts:');
-  const cmp = [['Good', g, tiers.good], ['Great', gr, tiers.great], ['Epic', ep, tiers.epic]];
+  const cmp = [['tier1+', g, tiers.good], ['tier2+', gr, tiers.great], ['tier3', ep, tiers.epic]];
   for (const [n, a, b] of cmp)
-    console.log('  ' + n.padEnd(6) + 'hosted ' + a.toLocaleString().padStart(9) +
+    console.log('  ' + n.padEnd(8) + 'hosted ' + a.toLocaleString().padStart(9) +
                 '   artifact ' + b.toLocaleString().padStart(9) +
                 (a === b ? '   match' : '   *** DIFFER ***'));
   if (cmp.some(([, a, b]) => a !== b)) { console.log('PARITY FAILED'); process.exit(1); }

@@ -34,7 +34,10 @@ const DETAIL = new Map();              // slug -> columnar arrays, hosted only
 const DI = {};                         // detail column name -> its index
 if (WEB && META.detail) META.detail.forEach(function(k, i){ DI[k] = i; });
 
-const dayLen = (r, j) => (WEB ? r.s[j].length : r.s[j].length / 19);
+// Characters per packed day. h07_pack.py's DAYCH is the same number; it went
+// 19 -> 20 when the modelled 72-hour window was added.
+const DAYCH = 20;
+const dayLen = (r, j) => (WEB ? r.s[j].length : r.s[j].length / DAYCH);
 
 /* Tier, plus the two things a card counts but cannot read from the tier alone:
      bit 2  the wind took the day (gusts over half of it)
@@ -69,10 +72,14 @@ function dayAt(r, j, i){
            app: app, lo: app - at('appLo'), hi: app + at('appHi'),
            temp: temp, tlo: temp - at('tempLo'), thi: temp + at('tempHi'),
            opq: opq, gust: at('gust'), why: at('reason'), fail: fail, vis: band,
-           snow: at('wkModel') / 30,
-           meas: wkMeas === null ? null : wkMeas / 30,
-           s24: at('d24Model') / 30,
+           // Whole inches on both sides now. The MEASURED trio is what the
+           // gauges weighed; the mEq trio is the modelled snowfall converted
+           // by SQL back to the scale a gauge would have reported it on, so
+           // one tooltip serves a resort with a gauge and one without.
+           meas: wkMeas,
+           miss: at('miss'),
            new24: at('d24Meas'), newSnow: at('d72Meas'),
+           mEq24: at('mEq24'), mEq72: at('mEq72'), mEq168: at('mEq168'),
            swe: swe === null ? null : swe / 10 };
 }
 
@@ -187,11 +194,15 @@ const RULE = [
 // cheaper than making two numbers that look alike behave alike.
 const STAT_TIP = {
   epic:  'Epic days per trip, averaged over every winter on record. '
-       + 'Epic = a week with 5 inches or more behind it, plus 4 inches or more in the '
-       + 'last 24 hours, on a day warm enough to enjoy it.',
+       + 'Epic = a rideable powder day: 8°F or better, terrain you can see, no '
+       + 'wind hold, no rain, a week of 5 inches or more behind it, and 4 inches or '
+       + 'more in the last 24 hours. Very Cold days also need Partly Sunny or better. '
+       + 'It is judged on the snow rather than on comfort, so an Epic day is not '
+       + 'always a Good one.',
   great: 'Great days per trip, averaged over every winter on record. Epic days count '
-       + 'toward it. Great = a week with 5 inches or more behind it, plus either sun and '
-       + 'Comfortable temperatures, or 2 inches or more in the last 24 hours.',
+       + 'toward it. Great = a Good day with a week of 5 inches or more behind it, plus '
+       + 'either sun and Comfortable temperatures, 2 inches or more in the last 24 hours, '
+       + 'or 5 inches or more over three days.',
   good:  'Good days per trip, averaged over every winter on record. Great and Epic days '
        + 'count toward it. Good = felt temperature 16-45F, no wind hold, terrain visible '
        + 'over more than half the day, no rain on snow, and if the sky is Mostly Cloudy '
@@ -349,10 +360,24 @@ const FAILBITS = [[1, 'rain on snow'], [2, 'wind hold'], [4, 'flat light'],
                   [8, 'too cold'], [16, 'too warm'], [32, 'cloudy and cold']];
 const failList = m => FAILBITS.filter(b => m & b[0]).map(b => b[1]).join(', ');
 
+// The same idea one tier up. FAILBITS says why a day is Meh; these say what a
+// day that CLEARED its tier fell short of on the next one -- which the tooltip
+// had no way to express, so a Good day sitting under a 4-inch morning looked
+// arbitrary. Bits 1 and 2 are set only on Good days and bit 4 only on Great
+// ones, so the list never needs masking by tier. SQL sets them in MissMask;
+// nothing here re-derives a rule the page does not own.
+const MISSBITS = [[1, 'under 5&Prime; in the last week'],
+                  [2, 'nothing fresh, and not sunny and comfortable enough without it'],
+                  [4, 'under 4&Prime; this morning']];
+const missList = m => MISSBITS.filter(b => m & b[0]).map(b => b[1]).join(', ');
+
 // How the felt temperature reads. The model's floor is the bottom of Chilly:
 // 16F passes, 15F does not, so the band boundary and the rule are the same
 // number rather than two numbers that have to be kept in step.
-const TBANDS = [[10, 'Bitter cold'], [16, 'Very cold'], [20, 'Chilly'],
+// The 8 is load-bearing, not cosmetic: Epic's floor IS the bottom of Very
+// Cold, so this boundary and @EpicMinF in h05_skiday.sql are one number.
+// It read 10 until 2026-09-19, when Epic stopped borrowing Good's floor.
+const TBANDS = [[8, 'Bitter cold'], [16, 'Very cold'], [20, 'Chilly'],
                 [33, 'Comfortable'], [46, 'Warm']];
 function tband(f){
   for (let i = 0; i < TBANDS.length; i++) if (f < TBANDS[i][0]) return TBANDS[i][1];
@@ -360,7 +385,7 @@ function tband(f){
 }
 
 function decode(s, i){
-  const c = s.substr(i * 19, 19);
+  const c = s.substr(i * DAYCH, DAYCH);
   if (c[0] === ' ') return null;
   // `snow` is a WEEK of snow as a multiple of this resort's 5-inch line, not
   // inches: modelled snowfall runs anywhere from a third to half again the
@@ -373,10 +398,17 @@ function decode(s, i){
   // high ride as offsets from it, which is what keeps warm April highs from
   // hitting the top of the alphabet.
   const app = CODE[c[1]] - 33;
-  // slot 0 carries the tier in bits 0-1 and the 5-inch week verdict in bit 2
-  return { tier: CODE[c[0]] & 3, week: (CODE[c[0]] >> 2) & 1, app: app,
-           sun: CODE[c[2]] / 90, gust: CODE[c[3]], snow: CODE[c[4]] / 30,
-           meas: c[5] === ' ' ? null : CODE[c[5]] / 30, why: CODE[c[6]],
+  // slot 0 carries the tier in bits 0-1, the 5-inch week verdict in bit 2,
+  // and what the day missed the next tier on in bits 3-5
+  return { tier: CODE[c[0]] & 3, week: (CODE[c[0]] >> 2) & 1,
+           miss: (CODE[c[0]] >> 3) & 7, app: app,
+           sun: CODE[c[2]] / 90, gust: CODE[c[3]],
+           // the modelled week, in measured-equivalent inches
+           mEq168: CODE[c[4]],
+           // whole inches, the same grid as new24 and newSnow below. It was a
+           // multiple of 5 inches until 2026-09-19, which printed a week of
+           // 7.9in as "7.8" beside a 72h of 7.5in printed as "8".
+           meas: c[5] === ' ' ? null : CODE[c[5]], why: CODE[c[6]],
            vis: CODE[c[7]], lo: app - CODE[c[8]], hi: app + CODE[c[9]],
            newSnow: c[10] === ' ' ? null : CODE[c[10]],        // inches of new snow
            swe:     c[11] === ' ' ? null : CODE[c[11]] / 10,   // inches of water
@@ -391,8 +423,12 @@ function decode(s, i){
            // opaque sky cover, to half a percent. The band in slot 7 is derived
            // from this same rounded value in SQL, so label and number agree.
            opq:     CODE[c[17]] * 2,
-           // the morning, as a multiple of this resort's 2-inch line
-           s24:     CODE[c[18]] / 30 };
+           // the modelled morning and the 72 hours behind it, both in
+           // measured-equivalent inches. Slot 19 is new: the packed payload
+           // carried no modelled 72-hour figure at all, though Great's third
+           // path tests it.
+           mEq24:   CODE[c[18]],
+           mEq72:   CODE[c[19]] };
 }
 
 function score(r){
@@ -939,6 +975,39 @@ document.querySelectorAll('button.sort').forEach(function(b){
   });
 });
 
+/* The three snow windows, in inches, for a resort with gauges and for one
+   without alike. 292 of the 431 resorts here have no SNOTEL station in range
+   -- 69.6% of all days -- and until 2026-09-19 those resorts got a different
+   tooltip: two rows instead of four, written in multiples of their own
+   thresholds rather than in inches, and carrying no 72-hour figure at all
+   even though Great's third path tests that window.
+   The modelled numbers are not measurements and the rows say so, but they are
+   now on the same SCALE as a measurement, which is what makes a modelled
+   resort comparable with a gauged one instead of merely self-consistent.
+   SQL does the conversion (h14_export.sql); nothing here re-derives it. */
+function snowRows(o){
+  const row = (k, v) => '<span>' + k + ':</span><span>' + v + '</span>';
+  const gauged = o.meas !== null;
+  const tag = gauged ? '' : ' &mdash; modelled';
+  const inches = v => (v == null ? '?' : v + '&Prime;');
+  const wk  = gauged ? o.meas    : o.mEq168;
+  const d72 = gauged ? o.newSnow : o.mEq72;
+  const d24 = gauged ? o.new24   : o.mEq24;
+  // Epic's line was invisible on both sides before: the morning row named the
+  // 2-inch line and stopped there, so a 4-inch morning that failed Epic on the
+  // SKY looked no different from one that failed on the snow.
+  const cut24 = d24 == null ? '' : d24 >= 4 ? ' (clears 4&Prime;)'
+                                 : d24 >= 2 ? ' (clears 2&Prime;)' : '';
+  return row('Snow, week', inches(wk) + (wk >= 5 ? ' (clears 5&Prime;)' : '') + tag) +
+         row('Snow, 72h',  inches(d72) + (d72 >= 5 ? ' (clears 5&Prime;)' : '') + tag) +
+         row('Snow, 24h',  inches(d24) + cut24 + tag) +
+         // Only worth printing where there is something to compare against.
+         (gauged ? row('Model said', o.mEq168 + '&Prime; for the week ' +
+             ((o.mEq168 >= 5) === (o.meas >= 5) ? '(agrees)'
+              : (o.mEq168 >= 5 ? '(called the week, gauges did not)'
+                               : '(missed it, gauges say yes)'))) : '');
+}
+
 /* Built on hover, from whatever has arrived. In the hosted build the detail
    file may still be in flight, in which case the tier is known from the index
    and the rest says so rather than lying or showing nothing. */
@@ -962,6 +1031,9 @@ function tipHtml(a){
     // clause appended to the label.
     row('Day type', tier) +
     (o.tier === 0 && o.fail ? row('Failed on', failList(o.fail)) : '') +
+    // and, one tier up, what a day that cleared its tier fell short of
+    (o.tier === 1 && o.miss ? row('Missed Great on', missList(o.miss)) : '') +
+    (o.tier === 2 && o.miss ? row('Missed Epic on',  missList(o.miss)) : '') +
     row('Feels', tband(o.app) + ', ' + o.app + '&deg;F (' +
                  o.lo + '&ndash;' + o.hi + '&deg;F)') +
     // The same reading off the air thermometer. The bands are the felt ones,
@@ -972,19 +1044,7 @@ function tipHtml(a){
     row('Peak gust', Math.round(o.gust) + ' mph' + ((o.fail & 2) ? ' (wind hold)' : '')) +
     // The week first, because both Great paths hang on it, then the morning,
     // which is what separates Great from Epic.
-    (o.meas === null
-      ? row('Snow, week', o.snow.toFixed(2) + '&times; the 5&Prime; line' +
-                          (o.snow >= 1 ? ' (clears it)' : '') + ' &mdash; modelled') +
-        row('Snow, 24h', o.s24.toFixed(2) + '&times; the 2&Prime; line' +
-                         (o.s24 >= 1 ? ' (clears it)' : '') + ' &mdash; modelled')
-      : row('Snow, week', (o.meas * 5).toFixed(1) + '&Prime;' +
-                          (o.meas >= 1 ? ' (clears 5&Prime;)' : '')) +
-        row('Snow, 72h', (o.newSnow == null ? '?' : o.newSnow) + '&Prime;') +
-        row('Snow, 24h', (o.new24 == null ? '?' : o.new24) + '&Prime;') +
-        row('Model said', o.snow.toFixed(2) + '&times; the week line ' +
-          ((o.snow >= 1) === (o.meas >= 1) ? '(agrees)'
-           : (o.snow >= 1 ? '(called the week, gauges did not)'
-                          : '(missed it, gauges say yes)')))) +
+    snowRows(o) +
     '</div>';
 }
 

@@ -39,6 +39,9 @@ FILES = [
     'sql/h06_trip.sql', 'sql/h09_snotel.sql', 'sql/h10_freshcheck.sql',
     'sql/h11_freshmatrix.sql', 'sql/h12_freshdepth.sql', 'sql/h13_snowsource.sql',
     'sql/h17_calibrate.sql', 'sql/h18_consensus.sql',
+    # where the temperature lines came from: every powder day crossed against
+    # sky and felt temperature, with no rule of its own applied.
+    'sql/h21_powder_matrix.sql',
     # reference data and documentation
     'ski_resort_stats_2026.csv', 'weather_codes.txt', 'fail_rules.txt',
     'REBUILD.md', 'README.md',

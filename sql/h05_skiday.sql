@@ -82,6 +82,7 @@ CREATE TABLE meteo.ResortBenchmark
        columns; they exist for the 33 shown resorts that have none. */
     Snow24Cut2In  decimal(6,2) NOT NULL,   -- model inches worth 2" measured over 24h
     Snow24Cut4In  decimal(6,2) NOT NULL,   -- ...        worth 4" measured over 24h
+    Snow72Cut5In  decimal(6,2) NOT NULL,   -- ...        worth 5" measured over 72h
     Snow168Cut5In decimal(6,2) NOT NULL,   -- ...        worth 5" measured over a week
     CoverCutFt    decimal(6,2) NOT NULL,   -- modelled depth = 6in of real base here
     CONSTRAINT FK_ResortBenchmark_Resort FOREIGN KEY (ResortId) REFERENCES ref.Resort (ResortId)
@@ -95,8 +96,17 @@ CREATE TABLE meteo.SkiDay
     -- the three windows the tiers test, all ending at the opening bell
     ModelSnow24In decimal(6,2) NULL, ModelSnow168In decimal(7,2) NULL,
     DayRainIn decimal(6,2) NULL, RainOnSnow int NOT NULL,
-    MeanTempF decimal(5,1) NULL, MinTempF decimal(5,1) NULL, MaxTempF decimal(5,1) NULL,
-    MeanApparentF decimal(5,1) NULL, MinApparentF decimal(5,1) NULL,
+    /* The two MEANS carry three decimals; the mins and maxes stay at one.
+       A mean rounded to 0.1 and then rounded again to a whole degree is not the
+       same number as the mean rounded once: 19.457 stores as 19.5 and displays
+       as 20, while the tier test on the unrounded mean says 19. That split put
+       a different integer on the card than the model had judged on 78,304 days,
+       4,647 of them across a tier boundary -- a card reading "Comfortable,
+       20F" on a day rejected for being Chilly.
+       Min and Max are MIN()/MAX() of values already stored at 0.1, so they lose
+       nothing and stay as they are. */
+    MeanTempF decimal(6,3) NULL, MinTempF decimal(5,1) NULL, MaxTempF decimal(5,1) NULL,
+    MeanApparentF decimal(6,3) NULL, MinApparentF decimal(5,1) NULL,
     MaxApparentF decimal(5,1) NULL, WindChillGapF decimal(5,1) NULL,
     /* SunFraction is REPORTED ONLY as of the 2026-09 tier rewrite -- the sky
        test now runs on OpaquePct. It stays because the tooltip prints it and
@@ -126,9 +136,16 @@ CREATE TABLE meteo.SkiDay
        wrong way and passed. SQL decides; everything downstream serialises. */
     IsWeekSnow int NOT NULL,
     IsGood int NOT NULL, IsGreat int NOT NULL,
-    /* Epic is Great's second path with 4 inches in place of 2, so it nests
-       inside Great by construction rather than by luck.
-       Every snow test in the model is now an ABSOLUTE depth, because that is
+    /* EPIC IS NOT THE TOP OF THE LADDER. It is a separate verdict -- a
+       rideable powder day -- and it does NOT nest inside Good or Great. It
+       accepts a day down to 8F where Good stops at 16F, and it lets Chilly
+       through heavy cloud where Good asks for Comfortable. 7,293 days across
+       the record are Epic without being Good, and they are the biggest days
+       in it: 37 inches at Taos at 12F, the whole Tahoe basin under 30 inches
+       on 2023-01-01. Anything reading these three flags as a ladder must read
+       Epic FIRST -- which is what every consumer already does, since a day's
+       tier is derived as epic ? 3 : great ? 2 : good ? 1 : 0.
+       Every snow test in the model is an ABSOLUTE depth, because that is
        the only kind that ranks resorts against each other rather than each
        against itself. A gauge is no longer required: an ungauged resort is
        tested on modelled inches converted to its own scale (ResortBenchmark).
@@ -153,6 +170,19 @@ CREATE TABLE meteo.SkiDay
        same commit. */
     FailMask int NOT NULL,
     FailReason varchar(20) NOT NULL,
+    /* What a day that CLEARED its tier fell short of on the next one up.
+       FailMask answers "why is this Meh"; MissMask answers "why is this only
+       Good" and "why is this only Great", which the tooltip had no way to say:
+         1  no 5-inch week            (a Good day)
+         2  nothing fresh, and not sunny and comfortable enough without it
+                                      (a Good day)
+         4  under 4 inches this morning   (a Great day)
+       Bits 1 and 2 are set only on Good days, bit 4 only on Great days, so the
+       page can render the right row from the tier alone. Epic sets nothing.
+       Bit 4 needs no test of its own: under these tiers a Great day already
+       holds the week and Good's sky clause, so the morning is the only thing
+       between it and Epic.                                                     */
+    MissMask int NOT NULL,
     CONSTRAINT PK_SkiDay PRIMARY KEY CLUSTERED (ResortId, ObsDate),
     CONSTRAINT FK_SkiDay_Resort FOREIGN KEY (ResortId) REFERENCES ref.Resort (ResortId)
 );
@@ -164,13 +194,25 @@ CREATE OR ALTER PROCEDURE meteo.usp_BuildSkiDay
 (
     @OpenHour     int   = 9,     -- first lift hour, local
     @CloseHour    int   = 15,    -- last lift hour (15 = through 15:59)
-    /* Felt-temperature bands, in rounded degrees F. The tests run on the
-       ROUNDED mean, which is also the value shipped to the page, so a day can
-       never read 16F on the card and be rejected as too cold.
-         under 10  Bitter Cold        20..32  Comfortable
-         10..15    Very Cold          33..45  Warm
+    /* Felt-temperature bands, in rounded degrees F. The tests run on
+       ROUND(MeanApparentF, 0), and MeanApparentF is stored at the precision it
+       was computed at, so the integer the page prints is the integer the rule
+       judged. That was not true until 2026-09-19: the mean was stored at one
+       decimal and rounded again for display, so 19.457 was tested as 19 and
+       printed as 20.
+         under 8   Bitter Cold        20..32  Comfortable
+         8..15     Very Cold          33..45  Warm
          16..19    Chilly             over 45 Very Warm                        */
-    @MinApparentF float = 16.0,  -- Chilly floor; below it the day is Meh
+    @MinApparentF float = 16.0,  -- Chilly floor; below it an ordinary day is Meh
+    /* EPIC's own floor, and the reason it exists: four inches of new snow buys
+       eight degrees of tolerance. The 16F line is about whether a day is
+       ENJOYABLE, which is the right question for Good and Great and the wrong
+       one for a powder morning -- it was ranking 30.8 inches of gauge-measured
+       snow at 14F under a 14% sky as Meh (Alpine Meadows, 2023-01-01), on a
+       FailMask of 8: one bit, too cold, and nothing else wrong at all.
+       8F is the bottom of Very Cold, not an arbitrary softening: below it the
+       day is Bitter Cold and no amount of snow is claimed to fix that. */
+    @EpicMinF     float =  8.0,  -- Very Cold floor; EPIC only
     @MaxApparentF float = 45.0,  -- above this it is slush
     @ComfortMinF  float = 20.0,  -- Comfortable floor; gates the cloudy days
     @GustHoldMph  float = 40.0,  -- upper lifts likely on hold
@@ -196,9 +238,10 @@ CREATE OR ALTER PROCEDURE meteo.usp_BuildSkiDay
        across 4.4 million lift hours it averages 5.3 mph and touches 40.0 mph
        exactly once, so a sustained-40 rule would never fire in 27 winters. The
        gust field (mean 20.3, max 136) is the one carrying mountain wind.       */
-    @Snow24GreatIn float = 2.0,  -- 24h fresh for Great's second path
+    @Snow24GreatIn float = 2.0,  -- 24h fresh, the first door on Great's snow path
     @Snow24EpicIn  float = 4.0,  -- 24h fresh for Epic
-    @Snow168In     float = 5.0,  -- a week of snow, required by BOTH Great paths
+    @Snow72In      float = 5.0,  -- 72h fresh, the second door on the same path
+    @Snow168In     float = 5.0,  -- a week of snow, required by EVERY Great path
     /* Base is a FLOOR, not a ranking. The old rule wanted base above this
        resort's own 40th percentile, which by construction rejected 40% of days
        everywhere -- including 20% of February and 18% of March, midwinter days
@@ -308,8 +351,8 @@ CREATE CLUSTERED INDEX CIX_Meas ON #Meas (ResortId, ObsDate);
    the @Bias above, which is a DEPTH ratio. Modelled snowfall is not uniformly low --
    Alta reads about 0.68 of its gauges while Mt. Baker reads about 1.53 -- which
    is exactly why a flat model-inch threshold cannot work. */
-DECLARE @SnowBias TABLE (ResortId int PRIMARY KEY, R24 float, R168 float);
-INSERT @SnowBias (ResortId, R24, R168)
+DECLARE @SnowBias TABLE (ResortId int PRIMARY KEY, R24 float, R72 float, R168 float);
+INSERT @SnowBias (ResortId, R24, R72, R168)
 /* Numerator and denominator over the SAME days. SUM() drops NULLs on each side
    independently, so a day the model saw but the gauge did not would add to the
    modelled total and nothing to the measured one -- inflating every ratio, and
@@ -317,6 +360,7 @@ INSERT @SnowBias (ResortId, R24, R168)
    Matters far more now that a missing reading is honestly NULL. */
 SELECT w.ResortId,
        SUM(CASE WHEN m.Me24  IS NOT NULL THEN w.M24  END) / NULLIF(SUM(m.Me24),  0),
+       SUM(CASE WHEN m.Me72  IS NOT NULL THEN w.M72  END) / NULLIF(SUM(m.Me72),  0),
        SUM(CASE WHEN m.Me168 IS NOT NULL THEN w.M168 END) / NULLIF(SUM(m.Me168), 0)
 FROM #Win w
 JOIN #Meas m ON m.ResortId = w.ResortId
@@ -326,17 +370,20 @@ GROUP BY w.ResortId
 HAVING SUM(m.Me24) > 50;
 
 -- median of the gauged resorts, for the ones with no gauge at all
-DECLARE @Fb24 float, @Fb168 float;
+DECLARE @Fb24 float, @Fb72 float, @Fb168 float;
 SELECT TOP 1 @Fb24  = PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY R24)  OVER ()
 FROM @SnowBias WHERE R24  IS NOT NULL;
+SELECT TOP 1 @Fb72  = PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY R72)  OVER ()
+FROM @SnowBias WHERE R72  IS NOT NULL;
 SELECT TOP 1 @Fb168 = PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY R168) OVER ()
 FROM @SnowBias WHERE R168 IS NOT NULL;
 
 INSERT meteo.ResortBenchmark
-    (ResortId, Snow24Cut2In, Snow24Cut4In, Snow168Cut5In, CoverCutFt)
+    (ResortId, Snow24Cut2In, Snow24Cut4In, Snow72Cut5In, Snow168Cut5In, CoverCutFt)
 SELECT r.ResortId,
        CONVERT(decimal(6,2), @Snow24GreatIn * ISNULL(sb.R24,  @Fb24)),
        CONVERT(decimal(6,2), @Snow24EpicIn  * ISNULL(sb.R24,  @Fb24)),
+       CONVERT(decimal(6,2), @Snow72In      * ISNULL(sb.R72,  @Fb72)),
        CONVERT(decimal(6,2), @Snow168In     * ISNULL(sb.R168, @Fb168)),
        CONVERT(decimal(6,2), @MinRealBaseFt * ISNULL(bi.Ratio, @FallbackBias))
 FROM (SELECT DISTINCT ResortId FROM #Win) r
@@ -356,8 +403,11 @@ WITH Lift AS
         SELECT  ResortId, ObsDate,
                 LiftHours   = COUNT(*),
                 DaylightHrs = SUM(CONVERT(int, IsDaylight)),
-                MeanTempF      = AVG(TempF),
-                MeanApparentF  = AVG(ApparentF),
+                /* Converted HERE, not on the way into the table, so that the
+                   value the tiers test and the value the page prints are
+                   literally the same number rather than two roundings of it. */
+                MeanTempF      = CONVERT(decimal(6,3), AVG(TempF)),
+                MeanApparentF  = CONVERT(decimal(6,3), AVG(ApparentF)),
                 MinApparentF   = MIN(ApparentF),
                 MaxApparentF   = MAX(ApparentF),
                 MinTempF       = MIN(TempF),
@@ -421,7 +471,7 @@ WITH Lift AS
                w.M24, w.M72, w.M168,
                m.Me24, m.Me72, m.Me168, m.Composite, m.Swe72In,
                MeasBaseFt = m.BaseFt,
-               b.Snow24Cut2In, b.Snow24Cut4In, b.Snow168Cut5In, b.CoverCutFt,
+               b.Snow24Cut2In, b.Snow24Cut4In, b.Snow72Cut5In, b.Snow168Cut5In, b.CoverCutFt,
                /* Quantised to the SAME 2-point grid the page ships, and
                   quantised HERE so the tiers, the band label and the printed
                   percentage all read one number. Ship it finer than you test it
@@ -456,10 +506,20 @@ WITH Lift AS
             S24_4  = CASE WHEN c.Me24 IS NOT NULL
                           THEN CASE WHEN c.Me24 >= @Snow24EpicIn THEN 1 ELSE 0 END
                           ELSE CASE WHEN c.M24  >= c.Snow24Cut4In  AND c.M24  > 0 THEN 1 ELSE 0 END END,
+            S72_5  = CASE WHEN c.Me72 IS NOT NULL
+                          THEN CASE WHEN c.Me72 >= @Snow72In THEN 1 ELSE 0 END
+                          ELSE CASE WHEN c.M72  >= c.Snow72Cut5In AND c.M72  > 0 THEN 1 ELSE 0 END END,
             S168_5 = CASE WHEN c.Me168 IS NOT NULL
                           THEN CASE WHEN c.Me168 >= @Snow168In THEN 1 ELSE 0 END
                           ELSE CASE WHEN c.M168 >= c.Snow168Cut5In AND c.M168 > 0 THEN 1 ELSE 0 END END,
-            -- every test that has nothing to do with sky or snow
+            /* SAFE is the three things no amount of snow can buy you out of:
+               you cannot read the terrain, the upper lifts are on hold, or it
+               rained on the pack. Kept apart from the temperature window
+               because EPIC accepts a colder day than Good does, and only the
+               temperature differs between them. */
+            Safe   = CASE WHEN c.Flat = 0 AND c.Blown = 0 AND c.Wet = 0
+                      THEN 1 ELSE 0 END,
+            -- SAFE plus the temperature window an ordinary day is judged on
             Ride   = CASE WHEN ROUND(c.MeanApparentF, 0) >= @MinApparentF
                            AND ROUND(c.MeanApparentF, 0) <= @MaxApparentF
                            AND c.Flat = 0 AND c.Blown = 0 AND c.Wet = 0
@@ -469,25 +529,54 @@ WITH Lift AS
     /* ---- the tiers ----
        GOOD   rideable, and if the sky is Mostly Cloudy or worse then
               Comfortable or better as well
-       GREAT  a 5-inch week, PLUS either sun and comfort, or 2 inches today
-       EPIC   Great's second path with 4 inches in place of 2
+       GREAT  a GOOD day, a 5-inch week, and then EITHER sun and comfort
+              (which is what carries a day with nothing fresh on it) OR snow:
+              2 inches this morning, or 5 over three days
+       EPIC   a RIDEABLE POWDER DAY: safe, 8F or better, a 5-inch week, and
+              4 inches this morning -- plus, if it is Very Cold, Partly Sunny
+              or better
 
-       They nest by construction rather than by coincidence: both Great paths
-       satisfy Good's cloud clause, and Epic is a strict tightening of Great's
-       second path. The verification asserts this rather than trusting it.      */
+       GOOD AND GREAT STILL NEST. Great's conditions are a literal superset of
+       Good's, so Great c Good cannot be violated by any input.
+
+       EPIC DELIBERATELY DOES NOT. It is not the top rung of the ladder any
+       more; it is a separate verdict about the snow, and it answers a
+       different question -- not "was this a nice day" but "was this a powder
+       day you could ride". So it accepts two kinds of day Good rejects:
+
+         - VERY COLD, 8..15F.  4,586 days. The floor at 16F is a comfort line,
+           and comfort is not what Epic is measuring. Taos on 2005-02-27 had
+           37 inches of measured snow at 12F under a 36% sky and scored Meh.
+         - CHILLY UNDER HEAVY CLOUD.  2,707 days. Good wants Comfortable once
+           the sky passes 62.5%; Epic asks only that you are not Very Cold.
+
+       Those two populations are exactly the days the MEH reasons now waive
+       (see FailReason below), so no Epic day is ever labelled Meh -- 7,293
+       days that used to be.
+
+       The COLD LADDER is monotone, which is the property worth checking:
+       Bitter Cold never qualifies at all; Very Cold must be Partly Sunny or
+       better; Chilly and up need no sky at all. The colder the day, the more
+       light it has to be given before snow can carry it.                      */
     Tiers AS
     (
         SELECT f.*,
             Good = CASE WHEN f.Ride = 1
                          AND (f.OpaquePct <= @MostlyCloudPct OR f.App >= @ComfortMinF)
                     THEN 1 ELSE 0 END,
-            Great = CASE WHEN f.Ride = 1 AND f.S168_5 = 1
+            Great = CASE WHEN f.Ride = 1
+                          AND (f.OpaquePct <= @MostlyCloudPct OR f.App >= @ComfortMinF)
+                          AND f.S168_5 = 1
                           AND ( (f.App >= @ComfortMinF AND f.OpaquePct <= @MostlySunnyPct)
-                             OR ((f.OpaquePct <= @SunnyPct OR f.App >= @ComfortMinF)
-                                  AND f.S24_2 = 1) )
+                             OR f.S24_2 = 1
+                             OR f.S72_5 = 1 )
                      THEN 1 ELSE 0 END,
-            Epic  = CASE WHEN f.Ride = 1 AND f.S168_5 = 1
-                          AND (f.OpaquePct <= @SunnyPct OR f.App >= @ComfortMinF)
+            Epic  = CASE WHEN f.Safe = 1
+                          AND f.App >= @EpicMinF
+                          AND f.App <= @MaxApparentF
+                          -- Very Cold has to be given Partly Sunny or better
+                          AND (f.App >= @MinApparentF OR f.OpaquePct <= @MostlyCloudPct)
+                          AND f.S168_5 = 1
                           AND f.S24_4 = 1
                      THEN 1 ELSE 0 END
         FROM Flags f
@@ -501,7 +590,7 @@ INSERT meteo.SkiDay
      MaxGustMph, MeanGustMph, WindHoldHours,
      IsCovered, IsFreshModel, IsFreshMeasured, FreshSource, IsFresh, IsWeekSnow,
      SnotelSwe72In, SnotelNewSnow72In, SnotelNewSnow24In, SnotelNewSnow168In,
-     SnotelBaseFt, BaseSource, IsGood, IsGreat, IsEpic, FailReason, FailMask)
+     SnotelBaseFt, BaseSource, IsGood, IsGreat, IsEpic, FailReason, FailMask, MissMask)
     SELECT  t.ResortId,
             t.ObsDate,
             SeasonStartYear = CASE WHEN MONTH(t.ObsDate) >= 7
@@ -519,10 +608,10 @@ INSERT meteo.SkiDay
             RainOnSnow       = t.Wet,
 
             /* ---- comfort ---- */
-            MeanTempF      = CONVERT(decimal(5,1), t.MeanTempF),
+            MeanTempF      = t.MeanTempF,
             MinTempF       = CONVERT(decimal(5,1), t.MinTempF),
             MaxTempF       = CONVERT(decimal(5,1), t.MaxTempF),
-            MeanApparentF  = CONVERT(decimal(5,1), t.MeanApparentF),
+            MeanApparentF  = t.MeanApparentF,
             MinApparentF   = CONVERT(decimal(5,1), t.MinApparentF),
             MaxApparentF   = CONVERT(decimal(5,1), t.MaxApparentF),
             WindChillGapF  = CONVERT(decimal(5,1), t.WindChillGapF),
@@ -570,9 +659,28 @@ INSERT meteo.SkiDay
             IsEpic  = t.Epic,
 
             /* Why the day is not Great, first reason only, in priority order.
-               The six that make a day Meh come first, then the two that stop a
-               rideable day short of Great. */
+               The six that make a day Meh come first, then the ones that stop a
+               Good day short of Great.
+               'Grey' IS NOW UNREACHABLE and kept only so the packed reason
+               indexes do not shift. It used to fire when a day had the snow and
+               the cold but too much cloud -- which is precisely the case the
+               tiers above stopped rejecting. A Good day that holds the week and
+               is not Great now always lacks fresh snow, so 'No fresh snow'
+               catches every one of them. The ordinal array in h07_pack.py,
+               _hscript.js and both verifiers must keep the slot regardless. */
             FailReason = CASE
+                /* EPIC FIRST, and this one line carries both waivers the rules
+                   ask for: "Too Cold ... AND not EPIC" and "Cloudy and Cold ...
+                   AND not EPIC". An Epic day is never labelled Meh.
+                   It is safe at the top of the chain because Epic requires
+                   Safe = 1, so the three rows below it are already 0.
+                   'Great' is this list's index-0 sentinel meaning NOTHING WENT
+                   WRONG, not a claim that the day was Great -- an Epic day that
+                   is Very Cold is not Great and never will be. Without this
+                   branch such a day falls through every row and lands on
+                   'Grey', which says "too much cloud" about days that are
+                   Bluebird as often as not. */
+                WHEN t.Epic  = 1                        THEN 'Great'
                 WHEN t.Wet   = 1                        THEN 'Rain on snow'
                 WHEN t.Blown = 1                        THEN 'Wind hold'
                 WHEN t.Flat  = 1                        THEN 'Flat light'
@@ -581,12 +689,18 @@ INSERT meteo.SkiDay
                 WHEN t.OpaquePct > @MostlyCloudPct
                  AND t.App < @ComfortMinF               THEN 'Cloudy and cold'
                 WHEN t.S168_5 = 0                       THEN 'No week snow'
-                WHEN t.Great = 0 AND t.S24_2 = 0        THEN 'No fresh snow'
+                WHEN t.Great = 0 AND t.S24_2 = 0
+                                 AND t.S72_5 = 0        THEN 'No fresh snow'
                 WHEN t.Great = 0                        THEN 'Grey'
                 ELSE 'Great' END,
 
             /* Every Good-tier test the day failed, not just the first to trip.
-               About a third of Meh days trip more than one. */
+               About a third of Meh days trip more than one.
+               NOT waived for Epic days, unlike FailReason above: this is the
+               factual record of which Good-tier tests a day failed, and an Epic
+               day at 12F did fail the 16F one. The page only renders it on Meh
+               days, so the distinction never reaches a reader -- except through
+               bit 2, which paints the wind-hold edge, and no Epic day sets it. */
             FailMask =
                   CASE WHEN t.Wet   = 1 THEN 1 ELSE 0 END
                 + CASE WHEN t.Blown = 1 THEN 2 ELSE 0 END
@@ -594,7 +708,23 @@ INSERT meteo.SkiDay
                 + CASE WHEN t.App < @MinApparentF THEN 8 ELSE 0 END
                 + CASE WHEN t.App > @MaxApparentF THEN 16 ELSE 0 END
                 + CASE WHEN t.OpaquePct > @MostlyCloudPct
-                        AND t.App < @ComfortMinF THEN 32 ELSE 0 END
+                        AND t.App < @ComfortMinF THEN 32 ELSE 0 END,
+
+            /* The same idea one tier up: what a day that cleared its tier fell
+               short of on the next. Written against the tier expressions above
+               rather than re-deriving them, so the two cannot drift.
+               Unchanged by B2, and it needs no Epic clause: 4 inches implies 2
+               (the modelled cut for 4 is exactly twice the cut for 2 at every
+               resort), so a day that is both Good and Epic is necessarily also
+               Great -- there is no Good-but-not-Great Epic day for bits 1 and 2
+               to mislabel. */
+            MissMask =
+                  CASE WHEN t.Good = 1 AND t.Great = 0
+                        AND t.S168_5 = 0 THEN 1 ELSE 0 END
+                + CASE WHEN t.Good = 1 AND t.Great = 0
+                        AND NOT ((t.App >= @ComfortMinF AND t.OpaquePct <= @MostlySunnyPct)
+                                 OR t.S24_2 = 1 OR t.S72_5 = 1) THEN 2 ELSE 0 END
+                + CASE WHEN t.Great = 1 AND t.Epic = 0 THEN 4 ELSE 0 END
     FROM Tiers t
 ;
 END
@@ -604,7 +734,7 @@ CREATE OR ALTER VIEW meteo.vSkiDay
 AS
 SELECT d.*, r.ResortName, r.StateOrProv, r.Region, r.MidElevationFt,
        r.GreenPercent, r.GreenAcres, r.PeakDayTicketUsd, r.Acres, r.VerticalFt,
-       b.Snow24Cut2In, b.Snow24Cut4In, b.Snow168Cut5In, b.CoverCutFt
+       b.Snow24Cut2In, b.Snow24Cut4In, b.Snow72Cut5In, b.Snow168Cut5In, b.CoverCutFt
 FROM meteo.SkiDay d
 JOIN ref.Resort r            ON r.ResortId = d.ResortId
 JOIN meteo.ResortBenchmark b ON b.ResortId = d.ResortId;

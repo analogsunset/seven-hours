@@ -50,6 +50,12 @@ assert len(A) >= 92 and '"' not in A and chr(92) not in A
 
 # Must stay identical, and in the same order, to FAILS in _hscript.js and
 # _hverify.js -- the index is what ships, not the string.
+# Characters per packed day. Every file that reads this payload has to agree:
+# h07_pack.py writes it, _hscript.js slices by it and _hverify.js asserts a
+# blank day decodes to null at exactly this width. It went 19 -> 20 on
+# 2026-09-19 when the modelled 72-hour window was added.
+DAYCH = 20
+
 FAILS = ['Great', 'Rain on snow', 'Wind hold', 'Flat light', 'Too cold',
          'Too warm', 'Cloudy and cold', 'No week snow', 'No fresh snow', 'Grey']
 FAIL_IX = {f: i for i, f in enumerate(FAILS)}
@@ -109,7 +115,8 @@ DAY_COLS = ['name', 'date', 'season', 'good', 'great', 'epic', 'covered', 'fresh
             'app', 'sun', 'gust', 'hold', 'flat', 'snow72', 'base', 'reason',
             'measRel', 'vis', 'appLo', 'appHi', 'newSnow72', 'swe72', 'newSnow24',
             'failMask', 'temp', 'tempLo', 'tempHi',
-            'opq', 'snow24', 'snow168', 'newSnow168', 'isWeek']
+            'opq', 'snow24', 'snow168', 'newSnow168', 'isWeek', 'miss',
+            'eq24', 'eq72', 'eq168']
 
 
 def num(v, cast=float):
@@ -134,25 +141,38 @@ for line in io.open('_skidays.txt', encoding='utf-8'):
         fmask = int(d['failMask'])
         tmp, tlo, thi = float(d['temp']), float(d['tempLo']), float(d['tempHi'])
         isweek = int(d['isWeek'])
+        miss = int(d['miss'])
         opq = float(d['opq'])
         s24, s168 = float(d['snow24']), float(d['snow168'])
         n168 = num(d['newSnow168'])
+        eq24, eq72, eq168 = (float(d['eq24']), float(d['eq72']), float(d['eq168']))
     except Exception:
         continue
     days[nm][sy][dte] = (
-        # tier in the low two bits, the 5-inch week verdict in the third. The
-        # slot held 0..3 and the alphabet holds 92 values, so carrying SQL's
-        # own answer here costs nothing rather than a twentieth character.
-        A[tier | (isweek << 2)],
+        # tier in the low two bits, the 5-inch week verdict in the third,
+        # and what the day MISSED the next tier on in bits 3-5. The slot held
+        # 0..3 and the alphabet holds 92 values, so all three of SQL's answers
+        # ride here (0..63) rather than costing two more characters a day.
+        A[tier | (isweek << 2) | (miss << 3)],
         A[max(TMIN, min(TMAX, r0(app))) - TMIN],            # exact degrees F
         A[r0(sun * 90)],                                    # 0..1
         A[r0(min(90.0, gust))],                             # mph, capped at 90
-        # A WEEK of snow as a multiple of this resort's 5-inch line, 0..3x ->
-        # 0..90. Both Great paths require this to clear 1.0, so it is the single
-        # most load-bearing number on the cell.
-        A[r0(min(3.0, s168 / weekcut.get(nm, 1e9) if weekcut.get(nm) else 0) * 30)],
-        # the same week, measured, as a multiple of a flat 5 inches
-        (A[r0(min(3.0, n168 / 5.0) * 30)] if n168 is not None else ' '),
+        # A WEEK of MODELLED snow, converted by SQL back to the inches a gauge
+        # would have reported -- the same unit and the same 0..91 grid as the
+        # measured slot below it. It shipped as a multiple of this resort's own
+        # 5-inch line until 2026-09-19, which meant the 292 resorts of 431 with
+        # no gauge -- 69.6% of all days -- read their tooltips in thresholds
+        # while everyone else read inches.
+        A[min(91, r0(eq168))],
+        # the same week, measured, in WHOLE INCHES -- the grid every other
+        # measured window uses. It shipped as a 30-step multiple of 5 inches
+        # until 2026-09-19, and the tooltip multiplied it back out: a 0.167in
+        # grid with a 15in ceiling printed beside a 72h row on a 1in grid with
+        # a 91in ceiling. 35,477 days showed a week SMALLER than their own 72
+        # hours, and Taos' 69-inch week of 2008-03-07 read "15.0in" next to
+        # "27in". Lossless here: the slot holds 0..91 and the largest measured
+        # week in 27 winters is 72.0.
+        (A[min(91, r0(n168))] if n168 is not None else ' '),
         A[FAIL_IX.get(reason, 0)],   # why this day landed where it did
         A[VIS_IX.get(vis, 4)],       # what it looked like
         A[max(0, min(91, r0(app) - r0(alo)))],     # degrees below the mean
@@ -168,10 +188,12 @@ for line in io.open('_skidays.txt', encoding='utf-8'):
         # slot 7 is derived from this same rounded value in SQL, so the two can
         # never disagree.
         A[max(0, min(91, r0(opq / 2.0)))],
-        # 24h snow as a multiple of this resort's 2-inch line. Great's second
-        # path and Epic both read it; shipped so an ungauged resort's tooltip
-        # can still say how big the morning was.
-        A[r0(min(3.0, s24 / cut24.get(nm, 1e9) if cut24.get(nm) else 0) * 30)],
+        # the MORNING, modelled, in measured-equivalent inches
+        A[min(91, r0(eq24))],
+        # and the 72 HOURS behind it, which the packed payload never carried:
+        # Great's third path tests it, and on an ungauged resort the tooltip had
+        # no way to show the window that may have decided the day.
+        A[min(91, r0(eq72))],
     )
     fails[nm][sy][reason] += 1
 
@@ -197,7 +219,7 @@ for line in io.open('_resorts.txt', encoding='utf-8'):
         while d <= end:
             key = d.strftime('%Y%m%d')
             rec = days[nm][sy].get(key)
-            s.append(''.join(rec) if rec else ' ' * 19)
+            s.append(''.join(rec) if rec else ' ' * DAYCH)
             d += datetime.timedelta(days=1)
         packed.append(''.join(s))
     out.append(dict(
@@ -270,7 +292,8 @@ if meta['resorts'] != len(out):
         % (len(out), meta['resorts']))
 io.open('_hmeta.json', 'w', encoding='utf-8').write(json.dumps(meta, separators=(',', ':')))
 print('resorts:', len(out), '| seasons each:', sorted({len(r['s']) for r in out}))
-print('season string lengths:', sorted({len(s) for r in out for s in r['s']}), '(= days x 19)')
+print('season string lengths:', sorted({len(s) for r in out for s in r['s']}),
+      '(= days x %d)' % DAYCH)
 print('KB:', round(len(js) / 1024))
 print('fail categories:', FAILS)
 print('meta:', meta)

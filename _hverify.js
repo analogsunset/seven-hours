@@ -14,17 +14,23 @@ const src = fs.readFileSync('_hscript.js', 'utf8');
 const lines = src.split('\n');
 const aLine = lines.find(function(l){ return l.trim().indexOf('const A =') === 0; });
 const cLine = lines.find(function(l){ return l.trim().indexOf('const CODE') === 0; });
+// decode() slices by DAYCH, so that line has to be lifted with it. It is taken
+// from the page script rather than retyped here, because a width written in two
+// places is exactly the drift this check exists to catch.
+const kLine = lines.find(function(l){ return l.trim().indexOf('const DAYCH') === 0; });
+if (!kLine) throw new Error('DAYCH not found in _hscript.js');
 const dStart = src.indexOf('function decode(s, i){');
 const dEnd   = src.indexOf('\n}', dStart) + 2;
 const decodeSrc = src.slice(dStart, dEnd);
-const decode = new Function('return (function(){' + aLine + '\n' + cLine + '\n' +
+const decode = new Function('return (function(){' + aLine + '\n' + cLine + '\n' + kLine + '\n' +
                             decodeSrc + '\nreturn decode;})()')();
-if (decode(' '.repeat(19), 0) !== null) throw new Error('decode() did not lift cleanly');
+const DAYCH = new Function(kLine + '; return DAYCH;')();
+if (decode(' '.repeat(DAYCH), 0) !== null) throw new Error('decode() did not lift cleanly');
 
 const COLS = ['name','date','season','good','great','epic','covered','fresh','app','sun','gust',
   'hold','flat','snow72','base','reason','measRel','vis','appLo','appHi','newSnow72','swe72',
   'newSnow24','failMask','temp','tempLo','tempHi',
-  'opq','snow24','snow168','newSnow168','isWeek'];
+  'opq','snow24','snow168','newSnow168','isWeek','miss','eq24','eq72','eq168'];
 const FAILS = ['Great','Rain on snow','Wind hold','Flat light','Too cold','Too warm',
                'Cloudy and cold','No week snow','No fresh snow','Grey'];
 const VIS = ['Flat light','Cloudy','Mostly cloudy','Partly sunny',
@@ -37,8 +43,9 @@ for (const line of fs.readFileSync('_skidays.txt','utf8').split('\n')){
   const o = {}; COLS.forEach(function(c,i){ o[c] = q[i]; });
   sql.set(o.name + '|' + o.date, o);
 }
-const weekCut = new Map(DATA.map(function(r){ return [r.name, r.weekCut]; }));
-const cut24   = new Map(DATA.map(function(r){ return [r.name, r.cut24]; }));
+// weekCut and cut24 are no longer read here: the modelled snow is checked
+// against SQL's own conversion to inches rather than a ratio rebuilt from
+// the cut, which is the whole point of moving the conversion into SQL.
 
 function r0(x){ return x >= 0 ? Math.floor(x + 0.5) : -Math.floor(-x + 0.5); }
 function clampApp(v){ return Math.max(-33, Math.min(58, r0(v))); }
@@ -46,7 +53,7 @@ function clampApp(v){ return Math.max(-33, Math.min(58, r0(v))); }
 const bad = []; let checked = 0, matched = 0;
 for (const r of DATA){
   for (let j = 0; j < r.s.length; j++){
-    const s = r.s[j], y = r.y0 + j, len = s.length / 19;
+    const s = r.s[j], y = r.y0 + j, len = s.length / DAYCH;
     for (let i = 0; i < len; i++){
       const d = decode(s, i);
       if (!d) continue;
@@ -59,6 +66,7 @@ for (const r of DATA){
       const chk = [
         ['tier', d.tier, (+q.epic ? 3 : (+q.great ? 2 : (+q.good ? 1 : 0)))],
         ['week', d.week, +q.isWeek],
+        ['miss', d.miss, +q.miss],
         ['app',  d.app,  app],
         ['sun',  Math.round(d.sun * 90), Math.round(+q.sun * 90)],
         ['gust', d.gust, Math.round(Math.min(90, +q.gust))],
@@ -78,16 +86,17 @@ for (const r of DATA){
         ['newSnow', d.newSnow, q.newSnow72 === '' ? null : Math.min(91, r0(+q.newSnow72))],
         ['swe',     d.swe === null ? null : Math.round(d.swe * 10),
                     q.swe72 === '' ? null : Math.min(91, r0(+q.swe72 * 10))],
-        // the week, modelled as a multiple of this resort's own 5-inch line
-        ['snow', Math.round(d.snow * 30),
-                 Math.round(Math.min(3, weekCut.get(r.name) ? +q.snow168 / weekCut.get(r.name) : 0) * 30)],
-        // the same week, measured, against a flat 5 inches
-        ['meas', d.meas === null ? null : Math.round(d.meas * 30),
-                 q.newSnow168 === '' ? null : Math.round(Math.min(3, +q.newSnow168 / 5) * 30)],
+        // Modelled snow, in the measured-equivalent inches SQL computed.
+        // Against the export's own number, not a ratio rebuilt from the cut.
+        ['mEq168', d.mEq168, Math.min(91, r0(+q.eq168))],
+        ['mEq72',  d.mEq72,  Math.min(91, r0(+q.eq72))],
+        // the same week, measured, in whole inches -- the grid the 24h and
+        // 72h rows already used. Against SQL's inches, not a re-scaling of them.
+        ['meas', d.meas,
+                 q.newSnow168 === '' ? null : Math.min(91, r0(+q.newSnow168))],
         // opaque sky cover, and the morning against the 2-inch line
         ['opq',  d.opq, Math.max(0, Math.min(91, r0(+q.opq / 2))) * 2],
-        ['s24',  Math.round(d.s24 * 30),
-                 Math.round(Math.min(3, cut24.get(r.name) ? +q.snow24 / cut24.get(r.name) : 0) * 30)],
+        ['mEq24', d.mEq24, Math.min(91, r0(+q.eq24))],
       ];
       for (const c of chk){
         checked++;

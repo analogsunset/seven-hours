@@ -64,9 +64,32 @@ SELECT CONVERT(nvarchar(max), d.ResortName) + '|' +
        ISNULL(CONVERT(varchar(10), d.SnotelNewSnow168In), '') + '|' +
        -- APPENDED: the week verdict, decided once in SQL. Both builds used to
        -- re-derive it and the hosted one got it wrong on 98,896 days.
-       CONVERT(varchar(1), d.IsWeekSnow)
+       CONVERT(varchar(1), d.IsWeekSnow) + '|' +
+       -- APPENDED: what a day that cleared its tier fell short of on the next
+       -- one up, so the tooltip can say "missed Great on" without the page
+       -- re-deriving a rule it does not own. See MissMask in h05_skiday.sql.
+       CONVERT(varchar(10), d.MissMask) + '|' +
+       /* MEASURED-EQUIVALENT INCHES for the three modelled windows.
+          The model side of every snow test is this resort's own bias-corrected
+          equivalent of an inch figure, so dividing back out by the cut and
+          multiplying by the inches it stands for returns the modelled snowfall
+          to the scale a gauge would have reported it on.
+          It is computed HERE, not on the page, for the same reason the week
+          verdict is: it is a conversion that belongs to the benchmark, and a
+          page that re-derives a scale it does not own gets it wrong eventually.
+          Without these, 292 of 431 resorts -- 69.6% of all days -- printed a
+          tooltip in multiples of their own thresholds while the other 139
+          printed inches, and the 72-hour window, which is one of Great's three
+          paths, did not appear on the modelled side at all. */
+       CONVERT(varchar(10), CONVERT(decimal(7,2),
+           ISNULL(d.ModelSnow24In  * 4.0 / NULLIF(b.Snow24Cut4In,  0), 0))) + '|' +
+       CONVERT(varchar(10), CONVERT(decimal(7,2),
+           ISNULL(d.ModelSnow72In  * 5.0 / NULLIF(b.Snow72Cut5In,  0), 0))) + '|' +
+       CONVERT(varchar(10), CONVERT(decimal(7,2),
+           ISNULL(d.ModelSnow168In * 5.0 / NULLIF(b.Snow168Cut5In, 0), 0)))
 FROM meteo.vSkiDaySnow d
 JOIN ref.Resort rr ON rr.ResortId = d.ResortId
+JOIN meteo.ResortBenchmark b ON b.ResortId = d.ResortId
 WHERE MONTH(d.ObsDate) IN (12,1,2,3,4)
   AND rr.VerticalFt >= @MinVerticalFt
   AND (@Regions = N'' OR rr.Region IN (SELECT LTRIM(RTRIM(value)) FROM STRING_SPLIT(@Regions, ',')))

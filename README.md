@@ -16,15 +16,21 @@ version:
 
 | | |
 |---|---|
-| **Felt temperature** | apparent temperature, mean over the lift hours. Bitter Cold under 10 °F · Very Cold 10–15 · Chilly 16–19 · Comfortable 20–32 · Warm 33–45 · Very Warm over 45 |
+| **Felt temperature** | apparent temperature, mean over the lift hours. Bitter Cold under 8 °F · Very Cold 8–15 · Chilly 16–19 · Comfortable 20–32 · Warm 33–45 · Very Warm over 45 |
 | **Sky** | percent of sky under *opaque* cloud — the thicker of the low and mid layers, high cirrus excluded. Bluebird ≤5% through Cloudy >87.5%, with flat light outranking all six |
 | **Wind** | gusts ≥40 mph over more than half the lift day |
 | **Snow** | absolute inches across three windows (24 h, 72 h, a week), measured by SNOTEL wherever a gauge reaches and modelled otherwise |
 
-**Good** is a rideable day. **Great** needs a 5-inch week behind it plus either
-sun and comfort or 2 inches that morning. **Epic** is Great's snow path with
-4 inches instead of 2. They nest by construction: every Epic day is Great, every
-Great day is Good.
+**Good** is a rideable day. **Great** is a Good day with a 5-inch week behind it
+and then either sun and comfort, 2 inches that morning, or 5 over three days — it
+nests inside Good structurally, its conditions being a literal superset.
+
+**Epic is not a rung on that ladder.** It is a rideable powder day: safe, 8 °F or
+better, a 5-inch week, 4 inches that morning, and Partly Sunny or better if it is
+Very Cold. It answers a different question from the other two — not whether the
+day was pleasant but whether it was a powder day you could ride — so it takes in
+7,293 days that Good turns down on comfort alone, including 37 inches at Taos at
+12 °F and the whole Tahoe basin under 30 inches on New Year's Day 2023.
 
 ### Two things worth knowing about the model
 
@@ -35,6 +41,14 @@ Arizona — which averages about ten inches of snow in an entire season — scor
 more Epic days than Alta, because its own 95th percentile was a fifth of an inch.
 Resorts without a gauge are judged on modelled inches converted to their own
 scale, not on their own ranking.
+
+**Only one rule looks at the sky.** Good rejects cold under heavy cloud, and
+that clause is the only sky test any tier applies — except on Great's
+no-new-snow path, where the sky is the whole reason the day qualifies. Snow days
+inherit Good's rule and nothing stricter, because flat light already rejects the
+days you cannot see and the 16 °F floor the ones you cannot bear. A tighter gate
+on top of those was discarding a third of all 4-inch mornings: 16.4 inches of
+gauge-measured snow at 18 °F at Heavenly ranked *Good*.
 
 **Wind is measured on gusts, not sustained speed.** ERA5's 10 m wind is a
 ~25 km grid-cell mean: across 4.4 million lift hours it averages 5.3 mph and

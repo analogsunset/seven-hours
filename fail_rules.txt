@@ -1,15 +1,12 @@
-Based on the data you have access to in the database, propose a more accurate way to measure Wind. For example, a single peak gust > 40 mph from 9-10am is very different from sustained winds.
-
-
 FELT TEMPERATURES
 - apparent temperatures
 
-Bitter Cold: under 10�F
-Very Cold: 10�15�F
-Chilly: 16�19�F
-Comfortable: 20�32�F
-Warm: 33�45�F
-Very warm: over 45�F
+Bitter Cold: under 8F
+Very Cold: 8-15F
+Chilly: 16-19F
+Comfortable: 20-32F
+Warm: 33-45F
+Very warm: over 45F
 
 SKY CONDITIONS
 - sky cover based on percent of the sky covered by opaque (not transparent) clouds
@@ -27,8 +24,8 @@ Too Warm = Very warm
 Too Windy = gusts of 40mph+ for over half of the lift day
 Rain = Rain on Snow
 Flat Light = Flat Light
-Too Cold = Bitter Cold OR Very Cold
-Cloudy and Cold = Mostly Cloudy or Cloudy AND Chilly
+Too Cold = Bitter Cold OR Very Cold AND not EPIC
+Cloudy and Cold = Mostly Cloudy or Cloudy AND Chilly AND not EPIC
 
 GOOD
 Felt temperature = Chilly, Comfortable, or Warm
@@ -44,23 +41,34 @@ Sky cover = Bluebird through Mostly Sunny
 Flat Light = No Flat Light
 Wind = gusts under 40 mph for more than half the lift day
 Rain = No Rain on Snow
-1 week fresh snow = Had 5 inches of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
+1 week fresh snow = Had 5 inches or more of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
 
 OR
 
 Felt temperature = Chilly, Comfortable, or Warm 
 Sky cover = Bluebird through Cloudy
-*If Cloudy, Mostly Cloudy, Partly Sunny, Mostly Sunny, temperature must be Comfortable or Warm
+*If Cloudy or Mostly Cloudy, temperature must be Comfortable or Warm
 Flat Light = No Flat Light
 Wind = gusts under 40 mph for more than half the lift day
 Rain = No Rain on Snow
 1 week fresh snow = Had 5 inches or more of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
 24 hour fresh snow = Had 2 inches or more of fresh snow in the last 24 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 24 hours.
 
-EPIC
+OR
+
 Felt temperature = Chilly, Comfortable, or Warm 
 Sky cover = Bluebird through Cloudy
-*If Cloudy, Mostly Cloudy, Partly Sunny, Mostly Sunny, temperature must be Comfortable or Warm
+*If Cloudy or Mostly Cloudy, temperature must be Comfortable or Warm
+Flat Light = No Flat Light
+Wind = gusts under 40 mph for more than half the lift day
+Rain = No Rain on Snow
+1 week fresh snow = Had 5 inches or more of fresh snow in the last 168 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 168 hours.
+72 hour fresh snow = Had 5 inches or more of fresh snow in the last 72 hours if measured by SNOTEL OR above its computed equivalent depth as measured by the model in the last 72 hours.
+
+EPIC
+Felt temperature = Very Cold, Chilly, Comfortable, or Warm 
+Sky cover = Bluebird through Cloudy
+*If Very Cold, must be Partly Sunny, Mostly Sunny, Sunny, or Bluebird
 Flat Light = No Flat Light
 Wind = gusts under 40 mph for more than half the lift day
 Rain = No Rain on Snow
@@ -70,8 +78,8 @@ Rain = No Rain on Snow
 
 
 
-
-
+ADDENDUM (NOT RULES, JUST NOTES)
+Based on the data you have access to in the database, propose a more accurate way to measure Wind. For example, a single peak gust > 40 mph from 9-10am is very different from sustained winds.
 
 NOTES ON WHAT THE DATA CAN ACTUALLY SUPPORT
 - WIND is measured on GUSTS, not sustained speed. ERA5's 10m wind is a ~25 km

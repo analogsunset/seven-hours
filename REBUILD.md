@@ -379,8 +379,10 @@ percentile.
 @MostlySunnyPct float = 37.5
 @MostlyCloudPct float = 62.5
 @CloudyPct      float = 87.5
+@EpicMinF       float =  8.0   -- EPIC's own floor: the bottom of Very Cold
 @Snow24GreatIn  float =  2.0   -- measured inches; the model side is
 @Snow24EpicIn   float =  4.0   -- bias-corrected per resort, see below
+@Snow72In       float =  5.0
 @Snow168In      float =  5.0
 @MinRealBaseFt  float =  0.5
 @FallbackBias   float =  0.65  -- DEPTH ratio only
@@ -390,8 +392,8 @@ percentile.
 
 | felt temperature | °F | | opaque sky cover | |
 |---|---|---|---|---|
-| Bitter Cold | under 10 | | Bluebird | ≤ 5% |
-| Very Cold | 10–15 | | Sunny | 5–12.5% |
+| Bitter Cold | under 8 | | Bluebird | ≤ 5% |
+| Very Cold | 8–15 | | Sunny | 5–12.5% |
 | Chilly | 16–19 | | Mostly Sunny | 12.5–37.5% |
 | Comfortable | 20–32 | | Partly Sunny | 37.5–62.5% |
 | Warm | 33–45 | | Mostly Cloudy | 62.5–87.5% |
@@ -409,18 +411,53 @@ BASE  = App 16..45  AND NOT flat light
 
 GOOD  = BASE AND (OpaquePct <= 62.5 OR App >= 20)
 
-GREAT = BASE AND Snow168 >= 5" AND (
-          (App >= 20 AND OpaquePct <= 37.5)                     -- a week of snow, sunny, comfortable
-       OR ((OpaquePct <= 12.5 OR App >= 20) AND Snow24 >= 2")    -- a week of snow, plus 2 inches today
+GREAT = GOOD AND Snow168 >= 5" AND (
+          (App >= 20 AND OpaquePct <= 37.5)   -- nothing fresh: sun and comfort carry it
+       OR Snow24 >= 2"                        -- or 2 inches this morning
+       OR Snow72 >= 5"                        -- or 5 over three days
         )
 
-EPIC  = BASE AND Snow168 >= 5" AND (OpaquePct <= 12.5 OR App >= 20)
-             AND Snow24 >= 4"
+EPIC  = SAFE AND App 8..45                   -- NOT Good: its own floor
+             AND (App >= 16 OR OpaquePct <= 62.5)   -- Very Cold needs Partly Sunny+
+             AND Snow168 >= 5" AND Snow24 >= 4"
+
+  where SAFE = NOT flat light AND NOT wind hold AND NOT rain-on-snow
 ```
 
-**They nest by construction, not by coincidence.** Both Great paths satisfy
-Good's cloud clause, and Epic is a strict tightening of Great's second path. The
-verification asserts it rather than trusting it (§14).
+**One sky rule, not three.** Every tier is built on GOOD and adds no sky test of
+its own except on the no-new-snow path, where the sky is the entire reason the
+day qualifies. The tighter gate the snow paths used to carry (`<= 37.5`, and
+`<= 12.5` before that) was a fourth rule doing work three others already did:
+flat light rejects the days you cannot see, the 16 °F floor rejects the ones you
+cannot bear, and GOOD's own clause rejects cold under heavy cloud. On top of
+those it was discarding **a third of all 4-inch mornings** — 16.4 inches of
+gauge-measured snow at 18 °F at Heavenly on 2006-04-17 ranked *Good* — because
+Chilly is one degree short of Comfortable and 46% cloud is past Mostly Sunny.
+
+**Great nests inside Good structurally.** Great's conditions are a literal
+superset of Good's, so Great ⊆ Good cannot be violated by any input.
+
+**Epic deliberately does not.** It is not the top rung of the ladder; it is a
+separate verdict about the snow, answering "was this a powder day you could
+ride" rather than "was this a nice day". So it accepts two kinds of day Good
+rejects — **7,293 across the record**, and they are the biggest days in it:
+
+| Epic but not Good | days | why Good says no |
+|---|---|---|
+| Very Cold, 8–15 °F | 4,586 | the 16 °F floor is a *comfort* line |
+| Chilly under heavy cloud | 2,707 | Good wants Comfortable past 62.5% cloud |
+
+Taos on 2005-02-27 had **37 inches** of gauge-measured snow at 12 °F under a 36%
+sky and scored Meh on a `FailMask` of 8 — one bit, too cold, nothing else wrong.
+The whole Tahoe basin sat under 30 inches at 10–14 °F on 2023-01-01, all Meh.
+
+The **cold ladder is monotone**, which is the property worth checking: Bitter
+Cold never qualifies, Very Cold must be Partly Sunny or better, Chilly and up
+need no sky at all. The colder the day, the more light it must be given before
+snow can carry it.
+
+Anything treating the three flags as a ladder must read **Epic first** — which
+every consumer already does, since a day's tier is `epic ? 3 : great ? 2 : good ? 1 : 0`.
 
 ### The five ideas that make it defensible
 
@@ -464,9 +501,28 @@ a column but gates nothing, because neither ERA5 nor SNOTEL can see snowmaking.
 
 ### FailReason and FailMask
 
-`FailReason` names the **first** thing wrong, in priority order: rain on snow →
-wind hold → flat light → too cold → too warm → cloudy and cold → no week snow →
-no fresh snow → grey → `'Great'`.
+`FailReason` names the **first** thing wrong, in priority order: **epic** → rain
+on snow → wind hold → flat light → too cold → too warm → cloudy and cold → no
+week snow → no fresh snow → grey → `'Great'`.
+
+**Epic sits at the head of the chain**, and that one row carries both waivers the
+rules ask for (`Too Cold ... AND not EPIC`, `Cloudy and Cold ... AND not EPIC`):
+an Epic day is never labelled Meh. It maps to `'Great'`, this list's index-0
+sentinel meaning *nothing went wrong* — not a claim the day was Great, which a
+Very Cold Epic day is not. Without the row such a day falls through every test
+and lands on `'Grey'`, which says "too much cloud" about days that are Bluebird
+as often as not.
+
+`FailMask` is **not** waived for Epic days: it is the factual record of which
+Good-tier tests failed, and an Epic day at 12 °F did fail the 16 °F one. The page
+renders it only on Meh days, so the difference never reaches a reader.
+
+**`'Grey'` is unreachable** and kept only so the packed reason indexes do not
+shift. It fired when a day had the snow and the cold but too much cloud — exactly
+the case the tiers above stopped rejecting. A Good day that holds the week and is
+not Great now always lacks fresh snow, so `'No fresh snow'` catches every one.
+The ordinal array in `h07_pack.py`, `h07_build.py`, `_hscript.js` and both
+verifiers must keep the slot regardless.
 
 `FailMask` is every Good-tier test the day failed, as bit flags:
 
@@ -480,6 +536,20 @@ The bits were **renumbered** in this rewrite — the long-retired thin-base slot
 finally reclaimed. That is only safe because the whole payload regenerates from
 this table on every build, so there are no archived days to relabel; the packer,
 the page and `_hverify.js` must move in the same commit.
+
+`MissMask` answers the question one tier up — what a day that **cleared** its
+tier fell short of on the next:
+
+```
+ 1  no 5-inch week                                           (a Good day)
+ 2  nothing fresh, and not sunny and comfortable without it  (a Good day)
+ 4  under 4 inches this morning                              (a Great day)
+```
+
+Bits 1–2 are set only on Good days and bit 4 only on Great days, so the tooltip
+renders the right row from the tier alone. Bit 4 needs no test of its own: a
+Great day already holds the week and Good's sky clause, so the morning is the
+only thing between it and Epic. Epic sets nothing.
 
 ## 8. The SNOTEL layer
 
@@ -545,17 +615,18 @@ needs no escaping:
 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+,-./:;<=>?@[]^_{|}~'`
 ```
 
-Each resort carries one string per season, Dec 1 → Apr 30, at **17 characters per
-day**. An absent day is 17 spaces.
+Each resort carries one string per season, Dec 1 → Apr 30, at **19 characters per
+day**. An absent day is 19 spaces. (This read "17" until 2026-09-19, two slots
+after it stopped being true — the table below is the authority.)
 
 | Slot | Content |
 |---|---|
-| 0 | tier (0 Meh, 1 Good, 2 Great, 3 Epic) |
+| 0 | tier in bits 0–1, week verdict in bit 2, `MissMask` in bits 3–5 (0–63) |
 | 1 | felt mean, absolute, window `TMIN,TMAX = -33,58` |
 | 2 | sun fraction × 90 (reported only; gates nothing) |
 | 3 | peak gust, mph, capped at 90 |
 | 4 | modelled **week** snow as a multiple of this resort's 5″ line, 0–3× → 0–90 |
-| 5 | measured week snow as a multiple of a flat 5″, or space |
+| 5 | measured week snow, **whole inches** capped at 91, or space |
 | 6 | fail reason index |
 | 7 | sky band index (7 values: flat light + six opaque bands) |
 | 8 | degrees below the felt mean |

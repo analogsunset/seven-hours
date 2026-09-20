@@ -47,14 +47,23 @@ DAY_COLS = ['name', 'date', 'season', 'good', 'great', 'epic', 'covered', 'fresh
             'app', 'sun', 'gust', 'hold', 'flat', 'snow72', 'base', 'reason',
             'measRel', 'vis', 'appLo', 'appHi', 'newSnow72', 'swe72', 'newSnow24',
             'failMask', 'temp', 'tempLo', 'tempHi',
-            'opq', 'snow24', 'snow168', 'newSnow168', 'isWeek']
+            'opq', 'snow24', 'snow168', 'newSnow168', 'isWeek', 'miss',
+            'eq24', 'eq72', 'eq168']
 
 # the detail file's columns, in order. tier/held/week live in the index; `sun`
 # is no longer displayed anywhere and `vis` is derivable from opq plus the
 # flat-light bit, so neither is shipped.
 DETAIL = ['app', 'appLo', 'appHi', 'temp', 'tempLo', 'tempHi',
           'opq', 'gust', 'reason', 'fail',
-          'wkModel', 'wkMeas', 'd24Model', 'd24Meas', 'd72Meas', 'swe']
+          'wkMeas', 'd24Meas', 'd72Meas', 'swe', 'miss',
+          # The same three windows the gauges report, for the 292 resorts of
+          # 431 that have none: modelled snowfall returned to measured inches
+          # by SQL. They replace the wkModel/d24Model RATIOS, which were the
+          # only snow figures an ungauged resort ever showed and were given in
+          # multiples of its own thresholds rather than in inches -- and which
+          # covered no 72-hour window at all, though it is one of Great's
+          # three paths. 69.6% of all days sat on that side.
+          'mEq24', 'mEq72', 'mEq168']
 
 IDX = '0123456789ABCDEF'          # 16 values: tier | held<<2 | week<<3
 
@@ -109,8 +118,6 @@ for line in io.open('_skidays_all.txt', encoding='utf-8'):
         sy = int(d['season'])
         app = float(d['app'])
         tmp = float(d['temp'])
-        wk  = weekcut.get(nm)
-        c24 = cut24.get(nm)
         n168, n72, n24 = num(d['newSnow168']), num(d['newSnow72']), num(d['newSnow24'])
         rec = dict(
             tier=3 if int(d['epic']) else (2 if int(d['great']) else (1 if int(d['good']) else 0)),
@@ -125,10 +132,12 @@ for line in io.open('_skidays_all.txt', encoding='utf-8'):
             reason=FAIL_IX.get(d['reason'], 0),
             fail=int(d['failMask']),
             isWeek=int(d['isWeek']),
-            wkModel=r0(min(3.0, float(d['snow168']) / wk if wk else 0) * 30),
-            wkMeas=(r0(min(3.0, n168 / 5.0) * 30) if n168 is not None else None),
-            d24Model=r0(min(3.0, float(d['snow24']) / c24 if c24 else 0) * 30),
+            miss=int(d['miss']),
+            wkMeas=(min(91, r0(n168)) if n168 is not None else None),
             d24Meas=(min(91, r0(n24)) if n24 is not None else None),
+            mEq24=min(91, r0(float(d['eq24']))),
+            mEq72=min(91, r0(float(d['eq72']))),
+            mEq168=min(91, r0(float(d['eq168']))),
             d72Meas=(min(91, r0(n72)) if n72 is not None else None),
             swe=(min(91, r0(num(d['swe72']) * 10)) if num(d['swe72']) is not None else None))
     except Exception:

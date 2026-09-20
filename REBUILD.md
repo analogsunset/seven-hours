@@ -414,7 +414,7 @@ GOOD  = BASE AND (OpaquePct <= 62.5 OR App >= 20)
 GREAT = SAFE AND Snow168 >= 5" AND (
           (App 20..45 AND OpaquePct <= 37.5)                  -- nothing fresh
        OR (App  8..45 AND CLOUDCLAUSE AND Snow24 >= 2")       -- 2 inches this morning
-       OR (App 16..45 AND CLOUDCLAUSE AND Snow72 >= 5")       -- 5 over three days
+       OR (App  8..45 AND CLOUDCLAUSE AND Snow72 >= 5")       -- 5 over three days
         )
 
   where CLOUDCLAUSE = (OpaquePct <= 62.5 OR App >= 20), Good's own
@@ -442,9 +442,16 @@ Epic, 4,532 presently Meh. The three flags are three separate verdicts; only the
 display orders them, as `epic ? 3 : great ? 2 : good ? 1 : 0`. Anything treating
 one as implying another is wrong.
 
-The 24-hour branch admits Very Cold and the 72-hour branch does not, which is
-**deliberate and asymmetric**: 9,865 Very Cold days clear 5 inches over 72 hours
-with no 2-inch morning and are rejected — more snow on the ground, lower tier.
+**Both snow branches share the 8 °F floor.** The 72-hour branch kept 16 °F for a
+single build, and the asymmetry that produced was the argument against it: 9,865
+Very Cold days had five inches down over three days, no 2-inch morning, and were
+rejected while thinner days were taken. Only branch 1 keeps a higher floor, and
+it has to — nothing fresh has fallen, so comfort and sun are the entire case for
+the day.
+
+**18,977 days are Great without being Good**, a fifth of all Great days. Good's
+flat 16 °F floor is what both snow branches route around; each widening of them
+widens that gap rather than closing it.
 
 **Epic deliberately does not.** It is not the top rung of the ladder; it is a
 separate verdict about the snow, answering "was this a powder day you could

@@ -578,10 +578,13 @@ WITH Lift AS
                for: 10F felt under 2% cloud, a 5-inch week, and 1.46 modelled
                inches against a 1.42-inch line.
 
-               ASYMMETRY, DELIBERATE: branch 3 keeps the 16F floor, so 9,865
-               Very Cold days that clear 5 inches over 72 hours but had no
-               2-inch morning are still rejected -- more snow on the ground,
-               lower tier. Left as specified. */
+               BOTH SNOW BRANCHES NOW SHARE THE 8F FLOOR. Branch 3 kept 16F
+               for a single build and the asymmetry it produced was the
+               argument against it: 9,865 Very Cold days had five inches down
+               over three days, no 2-inch morning, and were rejected while
+               thinner days were taken. Only branch 1 keeps a higher floor,
+               and it has to -- nothing fresh has fallen, so comfort and sun
+               are the entire case for the day. */
             Great = CASE WHEN f.Safe = 1 AND f.S168_5 = 1
                           AND (
                                /* nothing fresh: sun and comfort carry the day */
@@ -593,8 +596,13 @@ WITH Lift AS
                                 AND (f.OpaquePct <= @MostlyCloudPct
                                      OR f.App >= @ComfortMinF)
                                 AND f.S24_2 = 1)
-                               /* 5 inches over three days -- Chilly floor */
-                            OR (f.App >= @MinApparentF AND f.App <= @MaxApparentF
+                               /* 5 inches over three days -- same floor as the
+                                  24-hour branch since 2026-09-20. It kept 16F
+                                  for one build, which rejected 9,865 Very Cold
+                                  days that had five inches down over three days
+                                  but no 2-inch morning: more snow on the ground,
+                                  lower tier. */
+                            OR (f.App >= @EpicMinF AND f.App <= @MaxApparentF
                                 AND (f.OpaquePct <= @MostlyCloudPct
                                      OR f.App >= @ComfortMinF)
                                 AND f.S72_5 = 1)

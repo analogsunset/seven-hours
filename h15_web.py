@@ -17,6 +17,30 @@ SRC, OUT = '_hshell.html', 'web'
 # this; neither reads its own product any more.
 shell = io.open(SRC, encoding='utf-8').read()
 
+# Google Analytics 4, HOSTED BUILD ONLY. Deliberately not in _hshell.html, which
+# both builds read: seven_hours.html is a single self-contained file meant to be
+# published as a Claude artifact or handed around directly, and a published
+# artifact's CSP does not admit googletagmanager.com, so the tag would fail there
+# regardless -- and a tracker riding inside a file someone else hosts is a
+# different question from one on a page we serve ourselves.
+# Injected after <title> so the page_view fires before the payload fetch rather
+# than behind it.
+GA = """<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-6P5RZ5GHRY"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-6P5RZ5GHRY');
+</script>"""
+
+_anchor = '<title>Seven Hours</title>'
+if shell.count(_anchor) != 1:
+    raise SystemExit('h15_web.py: cannot place the analytics tag -- expected exactly one '
+                     '%r in %s, found %d' % (_anchor, SRC, shell.count(_anchor)))
+shell = shell.replace(_anchor, _anchor + '\n' + GA, 1)
+
 script = io.open('_hscript.js', encoding='utf-8').read().rstrip('\n')
 digest = hashlib.sha1(script.encode('utf-8')).hexdigest()[:10]
 
